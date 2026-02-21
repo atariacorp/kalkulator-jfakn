@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4f46e5">
+  <title>Kalkulator Beban Kerja JF AKN</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel untuk kompilasi JSX di Browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+  </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-900 overflow-hidden font-black">
+  <div id="root"></div>
+
+  <!-- Firebase Modular Setup -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+    // Menyimpan Firebase API ke global window agar bisa diakses oleh skrip React Babel
+    window.FirebaseAPI = {
+      initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+      getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot
+    };
+    
+    // Memberi tahu React bahwa Firebase sudah dimuat
+    window.dispatchEvent(new Event('FirebaseLoaded'));
+  </script>
+
+  <!-- Script Utama Aplikasi (React via Babel) -->
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+    // --- DATA MASTER KONSTAN ---
+    const MASTER_SKPD_DATA = [
+      { id: "SK.01", label: "Analisis Kinerja Historis dan Penyusunan RKA-SKPD Berbasis Bukti", uVol: "dokumen/tahun", uTime: "jam/dokumen", dVol: 1, dTime: 50, desc: "Menganalisis data kinerja dan realisasi anggaran 3 tahun terakhir guna menyusun usulan anggaran yang rasional (outcome-based budgeting)." },
+      { id: "SK.02", label: "Kajian Internal Efektivitas dan Efisiensi Belanja Program Unggulan SKPD", uVol: "program/tahun", uTime: "jam/program", dVol: 2, dTime: 30, desc: "Evaluasi mendalam dengan metode cost-effectiveness analysis pada program utama unit." },
+      { id: "SK.03", label: "Simulasi dan Analisis Dampak Perubahan Kebijakan terhadap Anggaran SKPD", uVol: "analisis/skenario", uTime: "jam/skenario", dVol: 3, dTime: 10, desc: "Model finansial simulasi dampak aturan baru pusat/daerah terhadap unit kerja." },
+      { id: "SK.04", label: "Analisis Realisasi Anggaran Triwulanan dan Penyusunan Prognosis Prediktif", uVol: "laporan/triwulan", uTime: "jam/laporan", multiplier: 4, dVol: 1, dTime: 12, desc: "Analisis pola deviasi dan proyeksi serapan akhir tahun bagi pimpinan unit." },
+      { id: "SK.05", label: "Analisis Kepatuhan Pajak atas Belanja SKPD dan Rekomendasi Mitigasi", uVol: "laporan/semester", uTime: "jam/laporan", multiplier: 2, dVol: 1, dTime: 16, desc: "Review kepatuhan pemotongan pajak belanja unit guna meminimalkan risiko temuan." },
+      { id: "SK.06", label: "Analisis Akurasi Pencatatan Akrual och Koreksi Laporan Keuangan", uVol: "laporan/semester", uTime: "jam/laporan", multiplier: 2, dVol: 1, dTime: 20, desc: "Menganalisis ketepatan pengakuan aset/beban sesuai SAP guna integritas laporan keuangan." },
+      { id: "SK.07", label: "Penyusunan Analisis Laporan Keuangan SKPD (Non-Mekanis)", uVol: "laporan/semester", uTime: "jam/laporan", multiplier: 2, dVol: 1, dTime: 24, desc: "Penjelasan naratif analitis atas angka laporan keuangan untuk keputusan pimpinan." },
+      { id: "SK.08", label: "Review Hasil Pemeriksaan dan Mitigasi Risiko Temuan Berulang", uVol: "laporan/tahun", uTime: "jam/laporan", dVol: 1, dTime: 32, desc: "Analisis akar penyebab temuan pemeriksaan dan penyusunan sistem pencegahan." },
+      { id: "SK.09", label: "Analisis Kebutuhan Belanja Modal dan Perencanaan Pengadaan BMD", uVol: "dokumen/tahun", uTime: "jam/dokumen", dVol: 1, dTime: 30, desc: "Mengkaji urgensi pengadaan aset baru berdasarkan kebutuhan layanan nyata." },
+      { id: "SK.10", label: "Analisis Pemanfaatan och Utilisasi Aset di Unit Kerja", uVol: "laporan/tahun", uTime: "jam/laporan", dVol: 1, dTime: 20, desc: "Evaluasi apakah aset unit telah digunakan secara optimal mendukung tugas fungsi." },
+      { id: "SK.11", label: "Review Kelayakan Usulan Penghapusan Aset Unit", uVol: "dokumen/tahun", uTime: "jam/dokumen", dVol: 1, dTime: 15, desc: "Analisis teknis dan ekonomis terhadap aset yang akan dihapuskan guna akuntabilitas." },
+      { id: "SK.12", label: "Review dan Analisis Data Dukung untuk Perencanaan Strategis (Renstra) SKPD", uVol: "kali/periodisasi", uTime: "jam/periodisasi", dVol: 1, dTime: 25, desc: "Memberikan kontribusi analitis pada Renstra SKPD terkait kesinambungan fiskal." },
+      { id: "SK.13", label: "Penyusunan Karya Tulis/Kajian Mini Pengelolaan Keuangan SKPD", uVol: "karya/tahun", uTime: "jam/karya", dVol: 1, dTime: 40, desc: "Menghasilkan karya ilmiah terapan (best practice) guna pengembangan ilmu pengelolaan daerah." },
+      { id: "SK.14", label: "Partisipasi Forum/Workshop Pengembangan Kebijakan Keuangan Daerah", uVol: "kali/tahun", uTime: "jam/kegiatan", dVol: 2, dTime: 8, desc: "Mengikuti diskusi workshop penyempurnaan sistem keuangan daerah yang diselenggarakan BKAD." },
+      { id: "SK.15", label: "Pengecekan Administratif Usulan Penghapusan Aset Unit (Pertama)", uVol: "usulan/tahun", uTime: "jam/usulan", dVol: 25, dTime: 1, desc: "Memeriksa kelengkapan dokumen aset (foto, berita acara) sebelum analisis teknis muda/madya." },
+      { id: "SK.16", label: "Penyusunan Draft Laporan Kinerja Keuangan Unit (Pertama)", uVol: "laporan/triwulan", uTime: "jam/laporan", multiplier: 4, dVol: 1, dTime: 4, desc: "Mengisi template laporan kinerja dengan data realisasi awal berdasarkan sistem." },
+      { id: "SK.17", label: "Penyiapan Bahan Paparan PPT & Infografis Keuangan SKPD (Pertama)", uVol: "paparan/bulan", uTime: "jam/paparan", multiplier: 12, dVol: 1, dTime: 2, desc: "Mengonversi hasil analisis keuangan menjadi slide presentasi komunikatif bagi pimpinan." },
+      { id: "SK.18", label: "Pengelolaan Arsip & Database Dokumen Perencanaan SKPD (Pertama)", uVol: "dokumen/bulan", uTime: "jam/dokumen", multiplier: 12, dVol: 50, dTime: 0.5, desc: "Scanning dan pengarsipan sistematis dokumen perencanaan (Renstra, RKA) fisik dan digital." }
+    ];
+
+    const MASTER_BAPENDA_DATA = [
+      { id: "BP.01", label: "Analisis dan Penyusunan Kebijakan Strategis Pajak Daerah", uVol: "dokumen kebijakan/tahun", uTime: "jam/dokumen", dVol: 2, dTime: 60, desc: "Menganalisis kinerja jenis pajak, membandingkan dengan daerah lain, dan menyusun draf kebijakan strategis." },
+      { id: "BP.02", label: "Kajian Potensi dan Kelayakan Penerimaan Pajak Daerah Baru", uVol: "kajian kelayakan/tahun", uTime: "jam/kajian", dVol: 1, dTime: 80, desc: "Studi mendalam fiscal gap analysis untuk identifikasi sumber pajak daerah baru yang potensial." },
+      { id: "BP.03", label: "Evaluasi Efektivitas Kebijakan Insentif Pajak", uVol: "evaluasi/tahun", uTime: "jam/ev", dVol: 1, dTime: 40, desc: "Menganalisis dampak kebijakan insentif terhadap kepatuhan wajib pajak dan PAD." },
+      { id: "BP.04", label: "Analisis Pengembangan Sistem Elektronifikasi Pajak (ETPD)", uVol: "kajian sistem/tahun", uTime: "jam/kajian", dVol: 1, dTime: 50, desc: "Mengevaluasi sistem existing dan spesifikasi teknis peningkatan layanan digital." },
+      { id: "BP.05", label: "Analisis Profil Risiko Kepatuhan Wajib Pajak Strategis", uVol: "laporan/bulan", uTime: "jam/lap", multiplier: 12, dVol: 1, dTime: 24, desc: "Scoring risiko WP berdasarkan tren pembayaran dan data transaksi pihak ketiga." },
+      { id: "BP.06", label: "Analisis Kelayakan Administrasi Penagihan Aktif (Jurusan/Sita)", uVol: "laporan/semester", uTime: "jam/laporan", multiplier: 2, dVol: 1, dTime: 20, desc: "Review efektivitas penagihan piutang pajak melalui langkah hukum perpajakan." },
+      ...MASTER_SKPD_DATA.slice(6, 18).map(s => ({...s, id: "BP." + s.id.split('.')[1]}))
+    ];
+
+    const MASTER_ANGGARAN_DATA = [
+      { id: "BK.PA.01", label: "Analisis & Verifikasi RKA-SKPD (APBD & Perubahan)", uVol: "dokumen/tahun", uTime: "jam/dok", dVol: 21349, dTime: 0.33, desc: "Analisis administratif och substansi usulan anggaran SKPD seluruh kota." },
+      { id: "BK.PA.02", label: "Review Laporan Realisasi Anggaran Tematik", uVol: "laporan/bulan", uTime: "jam/lap", multiplier: 12, dVol: 1, dTime: 3, desc: "Analisis tren belanja guna identifikasi deviasi dan rekomendasi korektif bulanan." },
+      { id: "BK.PA.03", label: "Penyusunan Kajian Fiskal Daerah & Analisis Hubungan Keuangan Pusat-Daerah", uVol: "kajian/tahun", uTime: "jam/kajian", dVol: 2, dTime: 40, desc: "Kajian kemandirian fiskal dan dampak kebijakan transfer pusat." },
+      { id: "BK.PA.04", label: "Monitoring & Evaluasi Kinerja APBD", uVol: "laporan/tri", uTime: "jam/lap", multiplier: 4, dVol: 1, dTime: 6, desc: "Eveluasi capaian outcome program se-kota dan analisis hambatan serapan anggaran." },
+      { id: "BK.PA.05", label: "Koordinasi Teknis dan Fasilitasi Penyusunan Anggaran SKPD", uVol: "kali/tahun", uTime: "jam/keg", dVol: 24, dTime: 2, desc: "Memimpin rapat/diskusi teknis penyelarasan kebijakan anggaran daerah bersama SKPD." },
+      { id: "BK.PA.06", label: "Pengolahan, Analisis, dan Sinkronisasi Data Anggaran", uVol: "dokumen", uTime: "jam", dVol: 100, dTime: 0.5, desc: "Integrasi data anggaran lintas sistem guna memastikan validitas angka tahapan penganggaran." },
+      { id: "BK.PA.07", label: "Review Kebijakan Belanja Daerah dalam rangka Efisiensi & Efektivitas", uVol: "dokumen", uTime: "jam", dVol: 2, dTime: 40, desc: "Kajian pola belanja produktif dan rekomendasi realokasi anggaran ke sektor prioritas kota." },
+      ...MASTER_SKPD_DATA.slice(14, 18).map((s, i) => ({...s, id: `BK.PA.${(i+8).toString().padStart(2, '0')}`})),
+      { id: "BK.PA.20", label: "Supervisi dan Bimbingan Teknis Intensif Penganggaran SKPD Percontohan", uVol: "SKPD/tahun", uTime: "jam/SKPD", dVol: 2, dTime: 30, desc: "Memberikan pendampingan khusus dan review berlapis proses penganggaran unit sampel." }
+    ];
+
+    const MASTER_AKUNTANSI_DATA = Array.from({length: 16}, (_, i) => ({ id: `BK.AK.${(i+1).toString().padStart(2, '0')}`, label: i === 0 ? "Penyusunan Laporan Keuangan Pokok Daerah (LKPD)" : `Analisis Akuntansi Lanjutan ke-${i+1}`, uVol: "dok", uTime: "jam", dVol: 1, dTime: i === 0 ? 100 : 20, desc: "Review kepatuhan pelaporan keuangan daerah sesuai SAP." }));
+    const MASTER_ASET_DATA = Array.from({length: 16}, (_, i) => ({ id: `BK.AS.${(i+1).toString().padStart(2, '0')}`, label: i === 0 ? "Penyusunan & Pemutakhiran Standar Harga Barang & Jasa" : `Manajemen Kekayaan Daerah ke-${i+1}`, uVol: "aset", uTime: "jam", dVol: 1, dTime: i === 0 ? 80 : 15, desc: "Analisis pemanfaatan dan pengamanan barang milik daerah." }));
+
+    const MASTER_PERBENDAHARAAN_DATA = [
+      { id: "BK.PB.01", label: "Analisis Dokumen Pelaksanaan APBD dan Laporan Realisasi", uVol: "dokumen/tahun", uTime: "jam/dok", dVol: 15000, dTime: 0.25, desc: "Analisis kuantitatif dan validasi dokumen SPP/SP2D/LPJ guna akurasi perencanaan anggaran." },
+      { id: "BK.PB.02", label: "Analisis Arus Kas (Cash Flow) dan Proyeksi Likuiditas Harian", uVol: "laporan/minggu", uTime: "jam/lap", multiplier: 48, dVol: 1, dTime: 2, desc: "Memantau posisi kas dan membuat proyeksi jangka pendek untuk menjaga likuiditas harian kas daerah." },
+      { id: "BK.PB.03", label: "Verifikasi dan Rekonsiliasi Data Kas dengan Bank/Kas Daerah", uVol: "transaksi/tahun", uTime: "jam/trans", dVol: 20000, dTime: 0.1, desc: "Pencocokan data bendahara dengan bukti bank guna menjamin akurasi nilai transaksi kas." },
+      ...Array.from({length: 12}, (_, i) => ({ id: `BK.PB.${(i+4).toString().padStart(2, '0')}`, label: `Manajemen Perbendaharaan ke-${i+4}`, uVol: "lap", uTime: "jam", dVol: 1, dTime: 20, desc: "Aktivitas penatausahaan dan pengelolaan likuiditas daerah." }))
+    ];
+
+    const INITIAL_MASTER_MAP = {
+      "SKPD": MASTER_SKPD_DATA,
+      "BAPENDA": MASTER_BAPENDA_DATA,
+      "BKAD_ANGGARAN": MASTER_ANGGARAN_DATA,
+      "BKAD_AKUNTANSI": MASTER_AKUNTANSI_DATA,
+      "BKAD_ASET": MASTER_ASET_DATA,
+      "BKAD_PERBENDAHARAAN": MASTER_PERBENDAHARAAN_DATA
+    };
+
+    const DAFTAR_SKPD_LIST_GLOBAL = [
+      "Badan Kepegawaian dan Pengembangan Sumber Daya Manusia", "Badan Kesatuan Bangsa dan Politik", "Badan Keuangan dan Aset Daerah",
+      "Badan Penanggulangan Bencana Daerah", "Badan Pendapatan Daerah", "Badan Perencanaan Pembangunan Daerah",
+      "Dinas Kependudukan dan Pencatatan Sipil", "Dinas Kesehatan", "Dinas Pendidikan", "Dinas Perhubungan",
+      "Dinas Sosial", "Sekretariat Daerah", "Kecamatan Medan Amplas"
+    ];
+
+    // Helper API Gemini
+    const apiKey = ""; 
+    const callGemini = async (prompt, systemInstruction) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] }
+      };
+      let delay = 1000;
+      for (let i = 0; i < 5; i++) {
+        try {
+          const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          const result = await response.json();
+          if (response.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text;
+        } catch (e) { if (i === 4) throw e; }
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+      throw new Error("AI Timeout");
+    };
+
+    const App = () => {
+      const [firebaseReady, setFirebaseReady] = useState(false);
+      const [firebaseObj, setFirebaseObj] = useState(null);
+
+      // --- LOGIN STATE ---
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [loginName, setLoginName] = useState("");
+
+      // --- PWA STATE ---
+      const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+      // --- STATE ---
+      const [user, setUser] = useState(null);
+      const [isSyncing, setIsSyncing] = useState(false);
+      const [activeTab, setActiveTab] = useState("MONITORING");
+      const [unitKerja, setUnitKerja] = useState("Badan Keuangan dan Aset Daerah");
+      const [jenisUnit, setJenisUnit] = useState("BKAD"); 
+      const [activeBidang, setActiveBidang] = useState("");
+      const [answers, setAnswers] = useState({});
+      const [bezetting, setBezetting] = useState({ PERTAMA: 0, MUDA: 0, MADYA: 0 });
+      const [fulfillment, setFulfillment] = useState({});
+      const [masterTasks, setMasterTasks] = useState(INITIAL_MASTER_MAP);
+      const [monitoringList, setMonitoringList] = useState([]);
+      const [searchSKPD, setSearchSKPD] = useState("");
+      const [filterKuesioner, setFilterKuesioner] = useState("");
+      const [searchMaster, setSearchMaster] = useState("");
+      const [activeBidangMaster, setActiveBidangMaster] = useState("SKPD");
+      const [showSKPDList, setShowSKPDList] = useState(false);
+      const [isAiLoading, setIsAiLoading] = useState(false);
+      const [aiAnalysis, setAiAnalysis] = useState(null);
+      const [lastSaved, setLastSaved] = useState(null);
+      const [showDeleteModal, setShowDeleteModal] = useState(null);
+
+      const jke = 1476;
+      const fileInputRef = useRef(null);
+
+      // --- INITIALIZE FIREBASE FROM WINDOW ---
+      useEffect(() => {
+        const initFB = () => {
+          try {
+            const configRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{"projectId":"mock"}';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            
+            if(configRaw !== '{"projectId":"mock"}'){
+                const firebaseConfig = JSON.parse(configRaw);
+                const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot } = window.FirebaseAPI;
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+                setFirebaseObj({ auth, db, appId, signInAnonymously, signInWithCustomToken, onAuthStateChanged, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot });
+            }
+          } catch(e) { console.error("Firebase Init Error", e) }
+          setFirebaseReady(true);
+        };
+
+        if (window.FirebaseAPI) initFB();
+        else window.addEventListener('FirebaseLoaded', initFB);
+        return () => window.removeEventListener('FirebaseLoaded', initFB);
+      }, []);
+
+      // --- PWA INITIALIZATION ---
+      useEffect(() => {
+        const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#4f46e5"/><path fill="#ffffff" d="M149.333 362.667v-213.334h213.334v213.334h-213.334zM192 320h128v-128h-128v128z"/><path fill="#ffffff" d="M256 106.667c-82.347 0-149.333 66.987-149.333 149.333s66.987 149.333 149.333 149.333 149.333-66.987 149.333-149.333-66.987-149.333-149.333-149.333z m0 256c-58.88 0-106.667-47.787-106.667-106.667s47.787-106.667 106.667-106.667 106.667 47.787 106.667 106.667-47.787 106.667-106.667 106.667z"/></svg>`;
+        const base64Icon = `data:image/svg+xml;base64,${btoa(svgIcon)}`;
+        const manifest = {
+          name: "Kalkulator JF AKN", short_name: "JF AKN", description: "Kalkulator Beban Kerja JF AKN",
+          start_url: ".", display: "standalone", background_color: "#f8fafc", theme_color: "#4f46e5",
+          icons: [ { src: base64Icon, sizes: "192x192", type: "image/svg+xml" }, { src: base64Icon, sizes: "512x512", type: "image/svg+xml" } ]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const manifestUrl = URL.createObjectURL(manifestBlob);
+        
+        let manifestLink = document.querySelector('link[rel="manifest"]');
+        if (!manifestLink) { manifestLink = document.createElement('link'); manifestLink.rel = 'manifest'; document.head.appendChild(manifestLink); }
+        manifestLink.href = manifestUrl;
+
+        if ('serviceWorker' in navigator) {
+          const swCode = `self.addEventListener('install', (e) => self.skipWaiting()); self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim())); self.addEventListener('fetch', (e) => { e.respondWith(fetch(e.request).catch(() => caches.match(e.request))); });`;
+          const swBlob = new Blob([swCode], { type: 'application/javascript' });
+          const swUrl = URL.createObjectURL(swBlob);
+          navigator.serviceWorker.register(swUrl).catch(() => {});
+        }
+
+        const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
+        window.addEventListener('beforeinstallprompt', handler);
+        return () => window.removeEventListener('beforeinstallprompt', handler);
+      }, []);
+
+      const handleInstallClick = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') setDeferredPrompt(null);
+      };
+
+      // --- FIREBASE SYNC ---
+      useEffect(() => {
+        if (!firebaseObj) return;
+        const { auth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = firebaseObj;
+        const initAuth = async () => {
+          try {
+            if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+              await signInWithCustomToken(auth, window.__initial_auth_token);
+            } else { await signInAnonymously(auth); }
+          } catch (e) { console.error(e); }
+        };
+        initAuth();
+        const unsub = onAuthStateChanged(auth, setUser);
+        return () => unsub();
+      }, [firebaseObj]);
+
+      useEffect(() => {
+        if (!user || !firebaseObj) return;
+        const { db, appId, doc, setDoc, onSnapshot } = firebaseObj;
+        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
+        const unsub = onSnapshot(masterRef, (snap) => {
+          if (snap.exists()) setMasterTasks(snap.data());
+          else setDoc(masterRef, INITIAL_MASTER_MAP);
+        }, (err) => console.log(err));
+        return () => unsub();
+      }, [user, firebaseObj]);
+
+      useEffect(() => {
+        if (!user || !firebaseObj) return;
+        const { db, appId, doc, onSnapshot } = firebaseObj;
+        const docId = unitKerja.replace(/\s+/g, '_');
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', docId);
+        const unsub = onSnapshot(docRef, (snap) => {
+          if (snap.exists()) {
+            const d = snap.data();
+            setAnswers(d.answers || {});
+            setBezetting(d.bezetting || { PERTAMA: 0, MUDA: 0, MADYA: 0 });
+            setFulfillment(d.fulfillment || {});
+            setLastSaved(d.timestamp?.toDate().toLocaleTimeString());
+          } else {
+            setAnswers({}); setBezetting({ PERTAMA: 0, MUDA: 0, MADYA: 0 }); setLastSaved(null);
+          }
+        }, (err) => console.log(err));
+        return () => unsub();
+      }, [user, unitKerja, firebaseObj]);
+
+      const autoSave = useCallback(async (updates) => {
+        if (!user || !firebaseObj) return;
+        const { db, appId, doc, setDoc } = firebaseObj;
+        setIsSyncing(true);
+        const docId = unitKerja.replace(/\s+/g, '_');
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', docId);
+        try {
+          await setDoc(docRef, { ...updates, unitKerja, timestamp: new Date() }, { merge: true });
+        } catch (e) { console.error(e); }
+        setIsSyncing(false);
+      }, [user, unitKerja, firebaseObj]);
+
+      const fetchMonitoringData = async () => {
+        if (!user || !firebaseObj) return;
+        const { db, appId, collection, getDocs } = firebaseObj;
+        try {
+          const colRef = collection(db, 'artifacts', appId, 'users', user.uid, 'skpd_data');
+          const snap = await getDocs(colRef);
+          const dataMap = {};
+          snap.forEach(doc => { const d = doc.data(); dataMap[d.unitKerja] = d; });
+          const list = DAFTAR_SKPD_LIST_GLOBAL.map(skpd => ({
+            nama: skpd,
+            filled: !!dataMap[skpd],
+            abk: dataMap[skpd]?.summary?.abk || "0.000",
+            lastUpdate: dataMap[skpd]?.timestamp?.toDate()?.toLocaleString() || "-"
+          }));
+          setMonitoringList(list);
+        } catch (e) { console.error(e); }
+      };
+
+      useEffect(() => { if (activeTab === "MONITORING" && user) fetchMonitoringData(); }, [activeTab, user]);
+
+      // PROFIL DATA MAPPER
+      const profilesDataMap = useMemo(() => ({
+        "BKAD": {
+          [`ANGGARAN (${masterTasks.BKAD_ANGGARAN?.length || 0})`]: masterTasks.BKAD_ANGGARAN,
+          [`AKUNTANSI (${masterTasks.BKAD_AKUNTANSI?.length || 0})`]: masterTasks.BKAD_AKUNTANSI,
+          [`ASET (${masterTasks.BKAD_ASET?.length || 0})`]: masterTasks.BKAD_ASET,
+          [`PERBENDAHARAAN (${masterTasks.BKAD_PERBENDAHARAAN?.length || 0})`]: masterTasks.BKAD_PERBENDAHARAAN,
+          [`SEKRETARIAT (${masterTasks.SKPD?.length || 0})`]: masterTasks.SKPD
+        },
+        "BAPENDA": {
+          [`PENDAPATAN DAERAH (${masterTasks.BAPENDA?.length || 0})`]: masterTasks.BAPENDA,
+          [`SEKRETARIAT (${masterTasks.SKPD?.length || 0})`]: masterTasks.SKPD
+        },
+        "SKPD": {
+          [`SEKRETARIAT SKPD (${masterTasks.SKPD?.length || 0})`]: masterTasks.SKPD
+        }
+      }), [masterTasks]);
+
+      useEffect(() => {
+        const keys = Object.keys(profilesDataMap[jenisUnit]);
+        if (!keys.includes(activeBidang)) setActiveBidang(keys[0]);
+      }, [jenisUnit, profilesDataMap]);
+
+      const resultsData = useMemo(() => {
+        let list = []; let totalJam = 0; let bPerJenjang = { PERTAMA: 0, MUDA: 0, MADYA: 0 };
+        const currentTasks = profilesDataMap[jenisUnit];
+        Object.values(currentTasks).forEach(taskList => {
+          taskList?.forEach(task => {
+            const v = answers[`${task.id}_vol`] || 0;
+            const n = answers[`${task.id}_time`] || 0;
+            const m = task.multiplier || 1;
+            const jam = v * m * n;
+            if (jam > 0) {
+              const txt = (task.label + " " + (task.desc || "")).toLowerCase();
+              const j = (txt.includes("strategis") || txt.includes("kebijakan")) ? "MADYA" : (txt.includes("analisis") || txt.includes("review")) ? "MUDA" : "PERTAMA";
+              bPerJenjang[j] += jam;
+              list.push({ ...task, jam, realVol: v * m, realNW: n, jenjang: j });
+              totalJam += jam;
+            }
+          });
+        });
+        return { list, totalJam, formasi: {
+          PERTAMA: (bPerJenjang.PERTAMA / jke).toFixed(3),
+          MUDA: (bPerJenjang.MUDA / jke).toFixed(3),
+          MADYA: (bPerJenjang.MADYA / jke).toFixed(3),
+          TOTAL: (totalJam / jke).toFixed(3)
+        }};
+      }, [answers, jenisUnit, profilesDataMap]);
+
+      const handleValChange = (taskId, field, val) => {
+        const numericVal = val === '' ? 0 : Number(val);
+        const newAnswers = { ...answers, [`${taskId}_${field}`]: numericVal };
+        setAnswers(newAnswers);
+        autoSave({ answers: newAnswers, summary: { abk: resultsData.formasi.TOTAL } });
+      };
+
+      const handleUpdateMaster = async (category, index, field, value) => {
+        if (!firebaseObj) return;
+        const { db, appId, doc, setDoc } = firebaseObj;
+        const newMaster = { ...masterTasks };
+        newMaster[category][index][field] = value;
+        setMasterTasks(newMaster);
+        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
+        await setDoc(masterRef, newMaster);
+      };
+
+      const handleAddNewTaskMaster = async () => {
+        if (!firebaseObj) return;
+        const { db, appId, doc, setDoc } = firebaseObj;
+        const prefixMap = { "SKPD": "SK", "BAPENDA": "BP", "BKAD_ANGGARAN": "BK.PA", "BKAD_AKUNTANSI": "BK.AK", "BKAD_ASET": "BK.AS", "BKAD_PERBENDAHARAAN": "BK.PB" };
+        const prefix = prefixMap[activeBidangMaster] || "XX";
+        const newId = `${prefix}.${(masterTasks[activeBidangMaster].length + 1).toString().padStart(2, '0')}`;
+        const newTask = { id: newId, label: "Butir Kegiatan Baru", uVol: "dokumen", uTime: "jam", dVol: 1, dTime: 20, desc: "Deskripsi tugas baru" };
+        
+        const newMaster = { ...masterTasks };
+        newMaster[activeBidangMaster] = [...newMaster[activeBidangMaster], newTask];
+        setMasterTasks(newMaster);
+        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
+        await setDoc(masterRef, newMaster);
+      };
+
+      const handleDeleteMaster = async (category, index) => {
+        if (!firebaseObj) return;
+        const { db, appId, doc, setDoc } = firebaseObj;
+        const newMaster = { ...masterTasks };
+        newMaster[category].splice(index, 1);
+        setMasterTasks(newMaster);
+        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
+        await setDoc(masterRef, newMaster);
+      };
+
+      const handleDeleteSKPD = async () => {
+        if (!user || !showDeleteModal || !firebaseObj) return;
+        const { db, appId, doc, deleteDoc } = firebaseObj;
+        const skpdDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', showDeleteModal.replace(/\s+/g, '_'));
+        try {
+          await deleteDoc(skpdDocRef);
+          fetchMonitoringData();
+          setShowDeleteModal(null);
+        } catch (e) { console.error(e); }
+      };
+
+      const handleDownloadTemplate = () => {
+        const rows = [["ID", "Kegiatan", "Volume (Masukan)", "Norma (Masukan)"]];
+        Object.keys(profilesDataMap[jenisUnit]).forEach(bidang => {
+          rows.push(["", `--- ${bidang} ---`, "", ""]);
+          profilesDataMap[jenisUnit][bidang].forEach(t => rows.push([t.id, t.label, "", ""]));
+        });
+        const csvContent = "sep=,\r\n" + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Template_ABK_${jenisUnit}.csv`; a.click();
+      };
+
+      const handleImportCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const text = evt.target.result;
+          const lines = text.split(/\r?\n/);
+          const newAnswers = { ...answers };
+          let duplicatesCount = 0;
+          lines.forEach(line => {
+            if (line.startsWith('sep=') || line.startsWith('"ID"')) return;
+            const delimiter = line.includes(';') ? ';' : ',';
+            const p = line.split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(x => x.replace(/^"|"$/g, "").trim());
+            if (p.length >= 3 && p[0] !== "") {
+              const id = p[0];
+              if (newAnswers[`${id}_vol`] !== undefined) duplicatesCount++;
+              if (!isNaN(parseFloat(p[2]))) newAnswers[`${id}_vol`] = parseFloat(p[2]);
+              if (!isNaN(parseFloat(p[3]))) newAnswers[`${id}_time`] = parseFloat(p[3]);
+            }
+          });
+          setAnswers(newAnswers);
+          autoSave({ answers: newAnswers });
+          if (duplicatesCount > 0) alert(`Peringatan: Terdapat ${duplicatesCount} data yang diperbarui.`);
+          else alert("Impor berhasil.");
+        };
+        reader.readAsText(file);
+      };
+
+      const handleExport = () => {
+        const rows = [["LAPORAN ANALISIS BEBAN KERJA"], [`UNIT: ${unitKerja}`], [], ["ID", "Aktivitas", "Volume", "Norma", "Total Jam", "Jenjang"]];
+        resultsData.list.forEach(r => rows.push([r.id, r.label, r.realVol, r.realNW, r.jam, r.jenjang]));
+        const csvContent = "sep=,\r\n" + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ABK_${unitKerja}.csv`; a.click();
+      };
+
+      const handleSKPDChangeConfirm = (nama) => {
+        setUnitKerja(nama); setShowSKPDList(false);
+        if (nama.includes("Keuangan")) setJenisUnit("BKAD");
+        else if (nama.includes("Pendapatan")) setJenisUnit("BAPENDA");
+        else setJenisUnit("SKPD");
+      };
+
+      const handleAIAnalysis = async () => {
+        if (resultsData.totalJam === 0) return;
+        setIsAiLoading(true); setAiAnalysis(null);
+        const prompt = `Unit: ${unitKerja}, ABK: ${resultsData.formasi.TOTAL}. Rekomendasi strategis pengisian sesuai PMK 78/2025.`;
+        try {
+          const insight = await callGemini(prompt, "Pakar SDM Pemda");
+          setAiAnalysis(insight);
+        } catch (e) { setAiAnalysis("AI sedang sibuk."); }
+        setIsAiLoading(false);
+      };
+
+      const handleLoginSubmit = (e) => {
+        e.preventDefault();
+        if (loginName.trim() !== "") {
+          setIsLoggedIn(true);
+        }
+      };
+
+      // Tampilan Menunggu Firebase
+      if (!firebaseReady) {
+        return <div className="min-h-screen flex items-center justify-center font-black text-indigo-600"><i className="ph-bold ph-spinner animate-spin text-4xl mr-3"></i> Memuat Aplikasi...</div>;
+      }
+
+      // Tampilan Login (Jika belum login)
+      if (!isLoggedIn) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-slate-100 p-4 w-full">
+            <div className="bg-white p-10 rounded-[2.5rem] shadow-xl w-full max-w-md border border-slate-100 animate-in fade-in zoom-in-95 duration-300">
+              <div className="flex justify-center mb-8">
+                 <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-lg shadow-indigo-200">
+                   <i className="ph-fill ph-calculator text-[40px]"></i>
+                 </div>
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 text-center mb-2 italic uppercase">Kalkulator JF AKN</h2>
+              <p className="text-xs font-bold text-slate-400 text-center mb-10 uppercase tracking-widest">Sistem Analisis Beban Kerja Terpadu</p>
+              
+              <form onSubmit={handleLoginSubmit} className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nama Pengguna / NIP</label>
+                  <div className="relative">
+                    <i className="ph-fill ph-user absolute left-4 top-3.5 text-[18px] text-slate-400"></i>
+                    <input 
+                      type="text" 
+                      required
+                      value={loginName}
+                      onChange={(e) => setLoginName(e.target.value)}
+                      placeholder="Masukkan nama anda..." 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                    />
+                  </div>
+                </div>
+                <button type="submit" className="w-full flex justify-center items-center gap-2 bg-indigo-600 text-white font-black py-4 rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all">
+                  Masuk Aplikasi <i className="ph-bold ph-arrow-right text-[14px]"></i>
+                </button>
+              </form>
+              
+              <div className="mt-8 text-center border-t border-slate-100 pt-6">
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Didukung oleh Cloud AI</p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Tampilan Aplikasi Utama (Setelah Login)
+      return (
+        <div className="min-h-screen flex overflow-hidden w-full animate-in fade-in">
+          
+          {/* Sidebar */}
+          <aside className="fixed left-0 top-0 h-full w-72 bg-white border-r border-slate-200 p-6 hidden lg:flex flex-col shadow-sm z-20 overflow-y-auto custom-scrollbar text-slate-700">
+            <div className="flex items-center gap-3 mb-10 shrink-0">
+              <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><i className="ph-fill ph-calculator text-[24px]"></i></div>
+              <h1 className="font-black text-xl tracking-tight leading-none uppercase italic text-slate-800">JF <span className="text-indigo-600">AKN</span></h1>
+            </div>
+
+            <nav className="space-y-6 flex-1">
+              <div className="space-y-1">
+                {[
+                  { id: "MONITORING", label: "MONITORING", icon: "ph-squares-four" },
+                  { id: "KUESIONER", label: "KUESIONER", icon: "ph-clipboard-text" },
+                  { id: "PROYEKSI", label: "RENCANA FORMASI", icon: "ph-target" },
+                  { id: "LAPORAN", label: "LAPORAN ABK", icon: "ph-file-text" },
+                  { id: "MASTER", label: "REFERENSI DATA", icon: "ph-database" }
+                ].map(t => (
+                  <button key={t.id} onClick={() => setActiveTab(t.id)}
+                    className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${activeTab === t.id ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}
+                  >
+                    <i className={`ph-fill ${t.icon} text-[16px]`}></i>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === "KUESIONER" && (
+                <div className="pt-6 border-t border-slate-100 animate-in fade-in shrink-0">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic text-center text-slate-400">Daftar Bidang {jenisUnit}</p>
+                  <div className="space-y-1">
+                    {Object.keys(profilesDataMap[jenisUnit]).map(b => (
+                      <button key={b} onClick={() => setActiveBidang(b)}
+                        className={`w-full text-left px-4 py-2.5 rounded-lg font-black tracking-wide transition-all border text-[9px] leading-tight ${activeBidang === b ? 'bg-indigo-600 text-white border-indigo-500 shadow-md' : 'text-slate-400 hover:bg-slate-50 border-transparent'}`}
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </nav>
+
+            <div className="pt-6 border-t border-slate-100 space-y-2 shrink-0">
+              <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 mb-2 shadow-inner font-black">
+                 <div className="flex items-center justify-between mb-1">
+                    <span className="text-[8px] uppercase text-indigo-400">Halo, {loginName}</span>
+                    {isSyncing ? <i className="ph-bold ph-arrows-clockwise text-[10px] animate-spin text-indigo-600"></i> : <i className="ph-fill ph-cloud text-[10px] text-emerald-500"></i>}
+                 </div>
+                 <p className="text-[9px] font-bold text-slate-600 truncate">{lastSaved ? `Sync: ${lastSaved}` : 'Menyinkronkan...'}</p>
+              </div>
+              {deferredPrompt && (
+                 <button onClick={handleInstallClick} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-[10px] hover:shadow-lg transition-all shadow-md animate-pulse mb-2">
+                    <i className="ph-fill ph-device-mobile text-[14px]"></i> INSTALL APLIKASI
+                 </button>
+              )}
+              <button onClick={() => fileInputRef.current.click()} className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] hover:bg-emerald-700 transition-all shadow-md">
+                <i className="ph-bold ph-upload-simple text-[14px]"></i> IMPORT CSV
+              </button>
+              <button onClick={handleDownloadTemplate} className="w-full flex items-center gap-3 px-4 py-2 bg-white text-slate-500 rounded-xl text-[10px] hover:bg-slate-50 border border-slate-200 shadow-sm">
+                <i className="ph-bold ph-download text-[14px]"></i> UNDUH TEMPLATE
+              </button>
+              <button onClick={() => setIsLoggedIn(false)} className="w-full flex items-center gap-3 px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[10px] hover:bg-rose-100 border border-rose-100 shadow-sm transition-all mt-2">
+                <i className="ph-bold ph-sign-out text-[14px]"></i> KELUAR
+              </button>
+              <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" accept=".csv" />
+            </div>
+          </aside>
+
+          <main className="lg:ml-72 p-6 md:p-10 pb-32 w-full min-w-0 overflow-y-auto">
+            <div className="max-w-6xl mx-auto">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+                <div className="relative w-full md:w-2/3">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <i className="ph-bold ph-magnifying-glass text-[12px]"></i> Unit Kerja Aktif:
+                  </p>
+                  <div onClick={() => setShowSKPDList(!showSKPDList)} className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm cursor-pointer flex justify-between items-center hover:border-indigo-400 transition-all">
+                    <span className="text-slate-800 text-lg truncate">{unitKerja}</span>
+                    <i className={`ph-bold ph-caret-down text-[20px] text-slate-400 transition-transform ${showSKPDList ? 'rotate-180' : ''}`}></i>
+                  </div>
+                  {showSKPDList && (
+                    <div className="absolute top-full left-0 w-full bg-white mt-2 rounded-3xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in">
+                      <div className="p-4 border-b bg-slate-50">
+                        <input autoFocus placeholder="Cari..." className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={searchSKPD} onChange={(e) => setSearchSKPD(e.target.value)} />
+                      </div>
+                      <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                        {DAFTAR_SKPD_LIST_GLOBAL.filter(s=>s.toLowerCase().includes(searchSKPD.toLowerCase())).map((skpd) => (
+                          <div key={skpd} onClick={() => handleSKPDChangeConfirm(skpd)} className={`px-6 py-4 text-xs font-bold hover:bg-indigo-50 cursor-pointer border-b last:border-none ${unitKerja === skpd ? 'text-indigo-600 bg-indigo-50' : ''}`}>
+                            {skpd}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto mt-4 md:mt-0 items-end">
+                  {deferredPrompt && (
+                    <button onClick={handleInstallClick} className="w-full md:w-auto bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all h-fit self-end animate-pulse">
+                      <i className="ph-fill ph-device-mobile text-[16px]"></i> INSTALL PWA
+                    </button>
+                  )}
+                  <button onClick={handleAIAnalysis} disabled={isAiLoading} className="w-full md:w-auto bg-purple-600 text-white px-8 py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 hover:bg-purple-700 transition-all h-fit self-end">
+                     {isAiLoading ? <i className="ph-bold ph-spinner text-[16px] animate-spin"></i> : <i className="ph-fill ph-sparkle text-[16px]"></i>} ANALISIS AI
+                  </button>
+                </div>
+              </div>
+
+              {/* Delete Modal */}
+              {showDeleteModal && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                   <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100">
+                      <div className="bg-rose-100 text-rose-600 w-12 h-12 rounded-2xl flex items-center justify-center mb-6"><i className="ph-fill ph-trash text-[24px]"></i></div>
+                      <h3 className="text-xl text-slate-800 mb-2 leading-tight text-center">Hapus data {showDeleteModal}?</h3>
+                      <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed text-center">Seluruh jawaban kuesioner unit ini akan dihapus permanen dari Cloud.</p>
+                      <div className="flex gap-3">
+                         <button onClick={() => setShowDeleteModal(null)} className="flex-1 px-4 py-3 rounded-xl bg-slate-100 text-slate-600 text-xs">BATAL</button>
+                         <button onClick={handleDeleteSKPD} className="flex-1 px-4 py-3 rounded-xl bg-rose-600 text-white text-xs shadow-lg shadow-rose-100">HAPUS</button>
+                      </div>
+                   </div>
+                </div>
+              )}
+
+              {/* AI Analysis Modal */}
+              {aiAnalysis && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in">
+                   <div className="bg-white rounded-[2rem] p-8 max-w-2xl w-full shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
+                      <div className="flex justify-between items-center mb-6 shrink-0">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-purple-100 text-purple-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i className="ph-fill ph-sparkle text-[24px]"></i></div>
+                          <div>
+                            <h3 className="text-xl text-slate-800 leading-tight font-black">Rekomendasi AI</h3>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-widest">{unitKerja}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setAiAnalysis(null)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition-colors"><i className="ph-bold ph-x text-[20px]"></i></button>
+                      </div>
+                      
+                      <div className="overflow-y-auto custom-scrollbar flex-1 pr-4">
+                        <div className="text-sm text-slate-600 leading-relaxed font-medium whitespace-pre-wrap bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                          {aiAnalysis}
+                        </div>
+                      </div>
+                      
+                      <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end shrink-0">
+                        <button onClick={() => setAiAnalysis(null)} className="px-6 py-3 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-black transition-colors shadow-lg">TUTUP ANALISIS</button>
+                      </div>
+                   </div>
+                </div>
+              )}
+
+              {activeTab === "MONITORING" && (
+                <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm animate-in fade-in">
+                  <h3 className="text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-10 leading-none">
+                    <i className="ph-fill ph-squares-four text-[24px] text-indigo-600"></i> Monitoring Progres Pengisian
+                  </h3>
+                  <div className="overflow-x-auto rounded-3xl border border-slate-100 shadow-inner">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase tracking-widest border-b">
+                          <th className="px-6 py-5">Nama SKPD</th>
+                          <th className="px-4 py-5 text-center">Status</th>
+                          <th className="px-4 py-5 text-center">ABK</th>
+                          <th className="px-4 py-5 text-center">Aksi</th>
+                          <th className="px-6 py-5 text-right">Update</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                        {monitoringList.map((m, i) => (
+                          <tr key={i} className="hover:bg-slate-50 transition-colors group">
+                            <td className="px-6 py-6 truncate max-w-[400px]">{m.nama}</td>
+                            <td className="px-4 py-6 text-center">
+                              {m.filled ? 
+                                <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] uppercase flex items-center justify-center gap-1 w-fit mx-auto leading-none"><i className="ph-fill ph-check-circle text-[10px]"></i> Terisi</span> : 
+                                <span className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-[9px] uppercase flex items-center justify-center gap-1 w-fit mx-auto leading-none"><i className="ph-bold ph-circle-dashed text-[10px]"></i> Belum</span>
+                              }
+                            </td>
+                            <td className="px-4 py-6 text-center text-indigo-600">{m.abk}</td>
+                            <td className="px-4 py-6 text-center">
+                               {m.filled && (
+                                 <button onClick={() => setShowDeleteModal(m.nama)} className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><i className="ph-bold ph-trash text-[16px]"></i></button>
+                               )}
+                            </td>
+                            <td className="px-6 py-6 text-right text-[9px] text-slate-400 italic">{m.lastUpdate}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "MASTER" && (
+                <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm animate-in fade-in">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 border-b pb-6 gap-4">
+                    <div>
+                      <h3 className="text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3">
+                        <i className="ph-fill ph-database text-[24px] text-indigo-600"></i> Referensi Data Master
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest italic leading-none">Pusat Manajemen Basis Data Butir Kegiatan</p>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                       <select className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={activeBidangMaster} onChange={(e) => setActiveBidangMaster(e.target.value)}>
+                          {Object.keys(masterTasks).map(cat => <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>)}
+                       </select>
+                       <div className="relative flex-1 md:w-64">
+                          <input placeholder="Cari di master..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={searchMaster} onChange={(e) => setSearchMaster(e.target.value)} />
+                          <i className="ph-bold ph-magnifying-glass text-[14px] absolute left-4 top-3.5 text-slate-400"></i>
+                       </div>
+                       <button onClick={handleAddNewTaskMaster} className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
+                         <i className="ph-bold ph-plus text-[20px]"></i>
+                       </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-12">
+                     {masterTasks[activeBidangMaster]?.filter(t => t.label.toLowerCase().includes(searchMaster.toLowerCase()) || t.id.toLowerCase().includes(searchMaster.toLowerCase())).map((t, idx) => (
+                        <div key={t.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-6">
+                           <div className="w-20 shrink-0 font-mono text-[10px] bg-slate-100 flex items-center justify-center rounded-xl h-10">{t.id}</div>
+                           <div className="flex-1 space-y-4">
+                              <input className="w-full text-xs p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-200" value={t.label} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'label', e.target.value)} />
+                              <textarea className="w-full text-[10px] p-3 bg-slate-50 rounded-xl outline-none h-20" value={t.desc} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'desc', e.target.value)} />
+                           </div>
+                           <div className="w-32 shrink-0 space-y-2">
+                              <div className="text-[8px] uppercase text-slate-400 text-center">Norma Jam</div>
+                              <input type="number" className="w-full text-center p-3 bg-indigo-50 rounded-xl text-indigo-600 text-lg h-14" value={t.dTime} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'dTime', Number(e.target.value))} />
+                              <button onClick={() => handleDeleteMaster(activeBidangMaster, idx)} className="w-full p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-all flex items-center justify-center gap-1 text-[9px]">
+                                <i className="ph-bold ph-trash text-[12px]"></i> HAPUS
+                              </button>
+                           </div>
+                        </div>
+                     ))}
+                     {masterTasks[activeBidangMaster]?.filter(t => t.label.toLowerCase().includes(searchMaster.toLowerCase()) || t.id.toLowerCase().includes(searchMaster.toLowerCase())).length === 0 && (
+                       <div className="py-20 text-center text-slate-300 italic">Tidak ada data master yang cocok</div>
+                     )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "KUESIONER" && (
+                <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm min-h-[600px] animate-in fade-in">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 border-b pb-6 gap-4">
+                    <div>
+                      <h3 className="text-2xl text-slate-800 uppercase tracking-tighter italic leading-none">{activeBidang}</h3>
+                      <div className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase shadow-lg shadow-indigo-100 mt-2">JKE: {jke} h/Thn</div>
+                    </div>
+                    <div className="relative w-full md:w-64">
+                       <input placeholder="Cari butir kegiatan..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={filterKuesioner} onChange={(e) => setFilterKuesioner(e.target.value)} />
+                       <i className="ph-bold ph-magnifying-glass text-[14px] absolute left-4 top-3.5 text-slate-400"></i>
+                       {filterKuesioner && <i className="ph-bold ph-x text-[14px] absolute right-4 top-3.5 text-slate-400 cursor-pointer" onClick={() => setFilterKuesioner("")}></i>}
+                    </div>
+                  </div>
+
+                  <div className="space-y-16 pl-4">
+                    {profilesDataMap[jenisUnit][activeBidang]?.filter(task => task.label.toLowerCase().includes(filterKuesioner.toLowerCase()) || task.id.toLowerCase().includes(filterKuesioner.toLowerCase())).map((task) => (
+                      <div key={task.id} className="group border-b border-slate-50 pb-12 last:border-0">
+                        <h4 className="text-[11px] text-slate-700 uppercase tracking-widest flex items-center mb-8 group-hover:text-indigo-600 transition-colors">
+                          <span className="text-slate-300 mr-4 text-[9px] font-mono bg-slate-50 px-2 py-0.5 rounded border">ID:{task.id}</span> {task.label}
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                          <div className="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100 shadow-inner relative h-fit group-hover:bg-indigo-100/50 transition-colors">
+                            <i className="ph-fill ph-lightbulb text-[16px] text-indigo-500 absolute -top-2 -left-2 bg-white p-0.5 rounded-full border border-indigo-100 shadow-sm"></i>
+                            <p className="text-[10px] text-indigo-400 uppercase tracking-widest mb-2 italic tracking-wider leading-none">Aktivitas Analitis & Kebijakan:</p>
+                            <p className="text-xs text-slate-600 leading-relaxed italic font-medium">{task.desc}</p>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 shrink-0">
+                            <div className="space-y-3">
+                              <label className="text-[9px] text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <i className="ph-fill ph-clipboard-text text-[12px]"></i> Volume ({task.uVol})
+                              </label>
+                              <input type="number" value={answers[`${task.id}_vol`] || ''} onChange={(e) => handleValChange(task.id, 'vol', e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 focus:ring-indigo-500 shadow-inner h-14" placeholder={task.dVol.toString()} />
+                            </div>
+                            <div className="space-y-3">
+                              <label className="text-[9px] text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <i className="ph-fill ph-clock text-[12px]"></i> Norma ({task.uTime})
+                              </label>
+                              <input type="number" step="0.1" value={answers[`${task.id}_time`] || ''} onChange={(e) => handleValChange(task.id, 'time', e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 focus:ring-indigo-500 shadow-inner h-14" placeholder={task.dTime.toString()} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "PROYEKSI" && (
+                <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-xl overflow-hidden animate-in fade-in">
+                  <h3 className="text-2xl text-slate-800 uppercase tracking-tighter mb-10 flex items-center gap-3 leading-none">
+                    <i className="ph-fill ph-calendar text-[24px] text-indigo-600"></i> Rencana Pemenuhan 5 Tahun
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[1000px]">
+                      <thead>
+                        <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase tracking-widest border-b">
+                          <th className="px-6 py-5">Jenjang Jabatan</th>
+                          <th className="px-4 py-5 text-center bg-indigo-50 text-indigo-700">ABK (Kebutuhan)</th>
+                          <th className="px-4 py-5 text-center">Bezetting</th>
+                          <th className="px-4 py-5 text-center bg-rose-50 text-rose-700">Gap (+/-)</th>
+                          {["2026", "2027", "2028"].map(y => <th key={y} className="px-4 py-5 text-center text-emerald-600">{y}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                        {["PERTAMA", "MUDA", "MADYA"].map((j) => {
+                           const abk = Number(resultsData.formasi[j]);
+                           const bez = bezetting[j] || 0;
+                           const gap = Math.round(abk) - bez;
+                           return (
+                            <tr key={j} className="hover:bg-slate-50/80 transition-all">
+                              <td className="px-6 py-6 italic leading-none text-slate-700">Analis Keuangan Ahli {j}</td>
+                              <td className="px-4 py-6 text-center text-indigo-600 bg-indigo-50/20 leading-none">{resultsData.formasi[j]}</td>
+                              <td className="px-4 py-6">
+                                <input type="number" value={bez} onChange={(e) => {
+                                 const nBez = {...bezetting, [j]: Number(e.target.value)};
+                                 setBezetting(nBez);
+                                 autoSave({ bezetting: nBez });
+                                }} className="w-16 mx-auto block bg-slate-50 border rounded-lg text-center py-1 focus:ring-2 focus:ring-indigo-500 outline-none h-10 leading-none" />
+                              </td>
+                              <td className={`px-4 py-6 text-center ${gap > 0 ? 'text-rose-500' : 'text-emerald-600'}`}>{gap > 0 ? `Kurang ${gap}` : gap < 0 ? `Lebih ${Math.abs(gap)}` : 'Sesuai'}</td>
+                              {[1,2,3].map(t => (
+                                <td key={t} className="px-4 py-6 bg-emerald-50/10">
+                                  <input type="number" value={fulfillment[`${j}_T${t}`] || ''} onChange={(e) => {
+                                     const nFul = {...fulfillment, [`${j}_T${t}`]: Number(e.target.value)};
+                                     setFulfillment(nFul);
+                                     autoSave({ fulfillment: nFul });
+                                  }} className="w-14 mx-auto block bg-white border border-emerald-100 rounded-lg text-center py-1 outline-none h-10 leading-none" placeholder="0" />
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "LAPORAN" && (
+                <div className="bg-white rounded-[2.5rem] p-10 border border-slate-200 shadow-sm overflow-hidden min-h-[600px] animate-in fade-in">
+                  <div className="flex justify-between items-center mb-8 border-b pb-6 shrink-0">
+                     <h3 className="text-xl text-slate-800 uppercase tracking-tighter italic leading-none">Laporan Analisis Beban Kerja {unitKerja}</h3>
+                     <button onClick={handleExport} className="bg-slate-900 text-white px-5 py-2 rounded-xl text-[10px] uppercase flex items-center gap-2 hover:bg-black transition-colors shadow-lg active:scale-95 leading-none h-10 shadow-slate-200">
+                       <i className="ph-bold ph-download text-[14px]"></i> EXPORT DATA CSV
+                     </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                    {["PERTAMA", "MUDA", "MADYA"].map(j => (
+                      <div key={j} className="p-6 bg-indigo-50 rounded-3xl border border-indigo-100 shadow-inner group hover:bg-indigo-600 transition-all duration-300 text-center">
+                        <p className="text-[10px] text-indigo-400 group-hover:text-indigo-200 uppercase mb-1 leading-none tracking-widest text-center">{j}</p>
+                        <p className="text-3xl text-indigo-700 group-hover:text-white italic leading-none text-center">{resultsData.formasi[j]}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <table className="w-full text-left text-[10px] border-collapse">
+                    <thead className="bg-slate-50 text-slate-400 border-b uppercase">
+                      <tr><th className="px-4 py-3">Rincian Aktivitas Analitis</th><th className="px-2 py-3 text-center">Beban Jam</th><th className="px-2 py-3 text-center text-indigo-600">Kebutuhan JF</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[9px] text-slate-700">
+                      {resultsData.list.map(r => (
+                        <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-4 py-3 leading-snug italic">{r.label}</td>
+                          <td className="px-2 py-3 text-center leading-none">{Math.round(r.jam).toLocaleString()} h</td>
+                          <td className="px-2 py-3 text-center text-indigo-600 leading-none">{(r.jam/jke).toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-900 text-white">
+                      <tr><td className="px-4 py-5 uppercase italic text-xs tracking-widest leading-none">Total Kebutuhan Formasi Unit</td><td></td><td className="px-2 py-5 text-center text-sm italic leading-none">{resultsData.formasi.TOTAL}</td></tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          </main>
+
+        </div>
+      );
+    };
+
+    // Render React ke DOM
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
