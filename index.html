@@ -29,25 +29,23 @@
 <body class="bg-slate-50 font-sans text-slate-900 overflow-hidden font-black">
   <div id="root"></div>
 
-  <!-- Firebase Modular Setup -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-    import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-    // Menyimpan Firebase API ke global window agar bisa diakses oleh skrip React Babel
-    window.FirebaseAPI = {
-      initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-      getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot
-    };
-    
-    // Memberi tahu React bahwa Firebase sudah dimuat
-    window.dispatchEvent(new Event('FirebaseLoaded'));
-  </script>
-
   <!-- Script Utama Aplikasi (React via Babel) -->
   <script type="text/babel">
     const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+    // Prefiks untuk kunci LocalStorage agar tidak bentrok dengan aplikasi lain
+    const APP_PREFIX = "akn_local_";
+
+    // --- PENGATURAN TEMA APLIKASI (WHITE-LABEL) ---
+    // Deklarasi eksplisit agar CDN Tailwind mengenali class-class ini
+    const THEME_OPTIONS = {
+      indigo: { bg: 'bg-indigo-600', hover: 'hover:bg-indigo-700', text: 'text-indigo-600', light: 'bg-indigo-50', border: 'border-indigo-100', hoverBorder: 'hover:border-indigo-400', ring: 'focus:ring-indigo-500' },
+      blue: { bg: 'bg-blue-600', hover: 'hover:bg-blue-700', text: 'text-blue-600', light: 'bg-blue-50', border: 'border-blue-100', hoverBorder: 'hover:border-blue-400', ring: 'focus:ring-blue-500' },
+      emerald: { bg: 'bg-emerald-600', hover: 'hover:bg-emerald-700', text: 'text-emerald-600', light: 'bg-emerald-50', border: 'border-emerald-100', hoverBorder: 'hover:border-emerald-400', ring: 'focus:ring-emerald-500' },
+      amber: { bg: 'bg-amber-500', hover: 'hover:bg-amber-600', text: 'text-amber-600', light: 'bg-amber-50', border: 'border-amber-100', hoverBorder: 'hover:border-amber-400', ring: 'focus:ring-amber-500' },
+      purple: { bg: 'bg-purple-600', hover: 'hover:bg-purple-700', text: 'text-purple-600', light: 'bg-purple-50', border: 'border-purple-100', hoverBorder: 'hover:border-purple-400', ring: 'focus:ring-purple-500' },
+      rose: { bg: 'bg-rose-600', hover: 'hover:bg-rose-700', text: 'text-rose-600', light: 'bg-rose-50', border: 'border-rose-100', hoverBorder: 'hover:border-rose-400', ring: 'focus:ring-rose-500' }
+    };
 
     // --- DATA MASTER KONSTAN ---
     const MASTER_SKPD_DATA = [
@@ -112,17 +110,28 @@
       "BKAD_PERBENDAHARAAN": MASTER_PERBENDAHARAAN_DATA
     };
 
-    const DAFTAR_SKPD_LIST_GLOBAL = [
-      "Badan Kepegawaian dan Pengembangan Sumber Daya Manusia", "Badan Kesatuan Bangsa dan Politik", "Badan Keuangan dan Aset Daerah",
-      "Badan Penanggulangan Bencana Daerah", "Badan Pendapatan Daerah", "Badan Perencanaan Pembangunan Daerah",
-      "Dinas Kependudukan dan Pencatatan Sipil", "Dinas Kesehatan", "Dinas Pendidikan", "Dinas Perhubungan",
-      "Dinas Sosial", "Sekretariat Daerah", "Kecamatan Medan Amplas"
+    // --- DATABASE REFERENSI SKPD DEFAULT ---
+    const DEFAULT_SKPD_LIST = [
+      { name: "Badan Kepegawaian dan Pengembangan Sumber Daya Manusia", type: "SKPD" },
+      { name: "Badan Kesatuan Bangsa dan Politik", type: "SKPD" },
+      { name: "Badan Keuangan dan Aset Daerah", type: "BKAD" },
+      { name: "Badan Penanggulangan Bencana Daerah", type: "SKPD" },
+      { name: "Badan Pendapatan Daerah", type: "BAPENDA" },
+      { name: "Badan Perencanaan Pembangunan Daerah", type: "SKPD" },
+      { name: "Dinas Kependudukan dan Pencatatan Sipil", type: "SKPD" },
+      { name: "Dinas Kesehatan", type: "SKPD" },
+      { name: "Dinas Pendidikan", type: "SKPD" },
+      { name: "Dinas Perhubungan", type: "SKPD" },
+      { name: "Dinas Sosial", type: "SKPD" },
+      { name: "Sekretariat Daerah", type: "SKPD" },
+      { name: "Kecamatan Medan Amplas", type: "SKPD" }
     ];
 
     // Helper API Gemini
-    const apiKey = ""; 
-    const callGemini = async (prompt, systemInstruction) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const envApiKey = ""; 
+    const callGemini = async (prompt, systemInstruction, userApiKey) => {
+      const activeKey = userApiKey || envApiKey;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: { parts: [{ text: systemInstruction }] }
@@ -133,6 +142,7 @@
           const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const result = await response.json();
           if (response.ok) return result.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (result.error) throw new Error(result.error.message);
         } catch (e) { if (i === 4) throw e; }
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2;
@@ -141,12 +151,23 @@
     };
 
     const App = () => {
-      const [firebaseReady, setFirebaseReady] = useState(false);
-      const [firebaseObj, setFirebaseObj] = useState(null);
+
+      // --- PENGATURAN AI & WHITE-LABEL STATE ---
+      const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem(`${APP_PREFIX}gemini_api_key`) || "");
+      const [keySavedMsg, setKeySavedMsg] = useState("");
+
+      const [customAppName, setCustomAppName] = useState(() => localStorage.getItem(`${APP_PREFIX}app_name`) || "Kalkulator JF AKN");
+      const [customPemdaName, setCustomPemdaName] = useState(() => localStorage.getItem(`${APP_PREFIX}pemda_name`) || "Sistem Analisis Beban Kerja Terpadu");
+      const [customLogo, setCustomLogo] = useState(() => localStorage.getItem(`${APP_PREFIX}app_logo`) || null);
+      const [appTheme, setAppTheme] = useState(() => localStorage.getItem(`${APP_PREFIX}app_theme`) || "indigo");
+      const [brandingSavedMsg, setBrandingSavedMsg] = useState("");
+
+      // Helper untuk mendapatkan objek tema aktif
+      const t = THEME_OPTIONS[appTheme] || THEME_OPTIONS.indigo;
 
       // --- LOGIN STATE ---
-      const [isLoggedIn, setIsLoggedIn] = useState(false);
-      const [loginName, setLoginName] = useState("");
+      const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem(`${APP_PREFIX}user_name`));
+      const [loginName, setLoginName] = useState(() => localStorage.getItem(`${APP_PREFIX}user_name`) || "");
       
       // --- MOBILE MENU STATE ---
       const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -154,17 +175,32 @@
       // --- PWA STATE ---
       const [deferredPrompt, setDeferredPrompt] = useState(null);
 
-      // --- STATE ---
-      const [user, setUser] = useState(null);
+      // --- STATE UTAMA ---
       const [isSyncing, setIsSyncing] = useState(false);
-      const [activeTab, setActiveTab] = useState("MONITORING");
+      const [activeTab, setActiveTab] = useState("PANDUAN"); // Set default tab to Cara Pakai
+      
+      // --- STATE MASTER (FROM LOCALSTORAGE) ---
+      const [masterTasks, setMasterTasks] = useState(() => {
+        const saved = localStorage.getItem(`${APP_PREFIX}master_tasks`);
+        return saved ? JSON.parse(saved) : INITIAL_MASTER_MAP;
+      });
+
+      const [skpdList, setSkpdList] = useState(() => {
+        const saved = localStorage.getItem(`${APP_PREFIX}skpd_list`);
+        return saved ? JSON.parse(saved) : DEFAULT_SKPD_LIST;
+      });
+
+      const [masterTabMode, setMasterTabMode] = useState("KEGIATAN"); // KEGIATAN | SKPD
+      const [newSkpdName, setNewSkpdName] = useState("");
+      const [newSkpdType, setNewSkpdType] = useState("SKPD");
+
       const [unitKerja, setUnitKerja] = useState("Badan Keuangan dan Aset Daerah");
       const [jenisUnit, setJenisUnit] = useState("BKAD"); 
       const [activeBidang, setActiveBidang] = useState("");
+      
       const [answers, setAnswers] = useState({});
       const [bezetting, setBezetting] = useState({ PERTAMA: 0, MUDA: 0, MADYA: 0 });
       const [fulfillment, setFulfillment] = useState({});
-      const [masterTasks, setMasterTasks] = useState(INITIAL_MASTER_MAP);
       const [monitoringList, setMonitoringList] = useState([]);
       const [searchSKPD, setSearchSKPD] = useState("");
       const [filterKuesioner, setFilterKuesioner] = useState("");
@@ -178,37 +214,14 @@
 
       const jke = 1476;
       const fileInputRef = useRef(null);
-
-      // --- INITIALIZE FIREBASE FROM WINDOW ---
-      useEffect(() => {
-        const initFB = () => {
-          try {
-            const configRaw = typeof __firebase_config !== 'undefined' ? __firebase_config : '{"projectId":"mock"}';
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            
-            if(configRaw !== '{"projectId":"mock"}'){
-                const firebaseConfig = JSON.parse(configRaw);
-                const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot } = window.FirebaseAPI;
-                const app = initializeApp(firebaseConfig);
-                const auth = getAuth(app);
-                const db = getFirestore(app);
-                setFirebaseObj({ auth, db, appId, signInAnonymously, signInWithCustomToken, onAuthStateChanged, doc, setDoc, getDoc, collection, getDocs, deleteDoc, onSnapshot });
-            }
-          } catch(e) { console.error("Firebase Init Error", e) }
-          setFirebaseReady(true);
-        };
-
-        if (window.FirebaseAPI) initFB();
-        else window.addEventListener('FirebaseLoaded', initFB);
-        return () => window.removeEventListener('FirebaseLoaded', initFB);
-      }, []);
+      const masterFileInputRef = useRef(null);
 
       // --- PWA INITIALIZATION ---
       useEffect(() => {
         const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#4f46e5"/><path fill="#ffffff" d="M149.333 362.667v-213.334h213.334v213.334h-213.334zM192 320h128v-128h-128v128z"/><path fill="#ffffff" d="M256 106.667c-82.347 0-149.333 66.987-149.333 149.333s66.987 149.333 149.333 149.333 149.333-66.987 149.333-149.333-66.987-149.333-149.333-149.333z m0 256c-58.88 0-106.667-47.787-106.667-106.667s47.787-106.667 106.667-106.667 106.667 47.787 106.667 106.667-47.787 106.667-106.667 106.667z"/></svg>`;
         const base64Icon = `data:image/svg+xml;base64,${btoa(svgIcon)}`;
         const manifest = {
-          name: "Kalkulator JF AKN", short_name: "JF AKN", description: "Kalkulator Beban Kerja JF AKN",
+          name: customAppName, short_name: customAppName.split(' ')[0], description: "Kalkulator Beban Kerja",
           start_url: ".", display: "standalone", background_color: "#f8fafc", theme_color: "#4f46e5",
           icons: [ { src: base64Icon, sizes: "192x192", type: "image/svg+xml" }, { src: base64Icon, sizes: "512x512", type: "image/svg+xml" } ]
         };
@@ -229,7 +242,7 @@
         const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
         window.addEventListener('beforeinstallprompt', handler);
         return () => window.removeEventListener('beforeinstallprompt', handler);
-      }, []);
+      }, [customAppName]);
 
       const handleInstallClick = async () => {
         if (!deferredPrompt) return;
@@ -238,83 +251,63 @@
         if (outcome === 'accepted') setDeferredPrompt(null);
       };
 
-      // --- FIREBASE SYNC ---
+      // --- UPDATE DOCUMENT TITLE DYNAMICALLY ---
       useEffect(() => {
-        if (!firebaseObj) return;
-        const { auth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = firebaseObj;
-        const initAuth = async () => {
-          try {
-            if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
-              await signInWithCustomToken(auth, window.__initial_auth_token);
-            } else { await signInAnonymously(auth); }
-          } catch (e) { console.error(e); }
-        };
-        initAuth();
-        const unsub = onAuthStateChanged(auth, setUser);
-        return () => unsub();
-      }, [firebaseObj]);
+        document.title = customAppName;
+      }, [customAppName]);
 
+      // --- LOCAL STORAGE DATA SYNC ---
+      
+      // Load data saat unitKerja berubah
       useEffect(() => {
-        if (!user || !firebaseObj) return;
-        const { db, appId, doc, setDoc, onSnapshot } = firebaseObj;
-        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
-        const unsub = onSnapshot(masterRef, (snap) => {
-          if (snap.exists()) setMasterTasks(snap.data());
-          else setDoc(masterRef, INITIAL_MASTER_MAP);
-        }, (err) => console.log(err));
-        return () => unsub();
-      }, [user, firebaseObj]);
-
-      useEffect(() => {
-        if (!user || !firebaseObj) return;
-        const { db, appId, doc, onSnapshot } = firebaseObj;
         const docId = unitKerja.replace(/\s+/g, '_');
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', docId);
-        const unsub = onSnapshot(docRef, (snap) => {
-          if (snap.exists()) {
-            const d = snap.data();
-            setAnswers(d.answers || {});
-            setBezetting(d.bezetting || { PERTAMA: 0, MUDA: 0, MADYA: 0 });
-            setFulfillment(d.fulfillment || {});
-            setLastSaved(d.timestamp?.toDate().toLocaleTimeString());
-          } else {
-            setAnswers({}); setBezetting({ PERTAMA: 0, MUDA: 0, MADYA: 0 }); setLastSaved(null);
-          }
-        }, (err) => console.log(err));
-        return () => unsub();
-      }, [user, unitKerja, firebaseObj]);
+        const savedData = localStorage.getItem(`${APP_PREFIX}skpd_data_${docId}`);
+        if (savedData) {
+          const d = JSON.parse(savedData);
+          setAnswers(d.answers || {});
+          setBezetting(d.bezetting || { PERTAMA: 0, MUDA: 0, MADYA: 0 });
+          setFulfillment(d.fulfillment || {});
+          setLastSaved(d.timestamp || new Date().toLocaleTimeString());
+        } else {
+          setAnswers({}); setBezetting({ PERTAMA: 0, MUDA: 0, MADYA: 0 }); setFulfillment({}); setLastSaved(null);
+        }
+      }, [unitKerja]);
 
-      const autoSave = useCallback(async (updates) => {
-        if (!user || !firebaseObj) return;
-        const { db, appId, doc, setDoc } = firebaseObj;
+      // Auto Save fungsi penyimpanan
+      const autoSave = useCallback((updates) => {
         setIsSyncing(true);
         const docId = unitKerja.replace(/\s+/g, '_');
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', docId);
-        try {
-          await setDoc(docRef, { ...updates, unitKerja, timestamp: new Date() }, { merge: true });
-        } catch (e) { console.error(e); }
-        setIsSyncing(false);
-      }, [user, unitKerja, firebaseObj]);
+        const key = `${APP_PREFIX}skpd_data_${docId}`;
+        
+        const existingDataStr = localStorage.getItem(key);
+        const existingData = existingDataStr ? JSON.parse(existingDataStr) : {};
+        
+        const timestamp = new Date().toLocaleTimeString();
+        const newData = { ...existingData, ...updates, unitKerja, timestamp };
+        
+        localStorage.setItem(key, JSON.stringify(newData));
+        setLastSaved(timestamp);
+        
+        // Animasi UI sync sebentar
+        setTimeout(() => setIsSyncing(false), 500);
+      }, [unitKerja]);
 
-      const fetchMonitoringData = async () => {
-        if (!user || !firebaseObj) return;
-        const { db, appId, collection, getDocs } = firebaseObj;
-        try {
-          const colRef = collection(db, 'artifacts', appId, 'users', user.uid, 'skpd_data');
-          const snap = await getDocs(colRef);
-          const dataMap = {};
-          snap.forEach(doc => { const d = doc.data(); dataMap[d.unitKerja] = d; });
-          const list = DAFTAR_SKPD_LIST_GLOBAL.map(skpd => ({
-            nama: skpd,
-            filled: !!dataMap[skpd],
-            abk: dataMap[skpd]?.summary?.abk || "0.000",
-            lastUpdate: dataMap[skpd]?.timestamp?.toDate()?.toLocaleString() || "-"
-          }));
-          setMonitoringList(list);
-        } catch (e) { console.error(e); }
-      };
+      const fetchMonitoringData = useCallback(() => {
+        const list = skpdList.map(skpdObj => {
+          const savedStr = localStorage.getItem(`${APP_PREFIX}skpd_data_${skpdObj.name.replace(/\s+/g, '_')}`);
+          const data = savedStr ? JSON.parse(savedStr) : null;
+          
+          return {
+            nama: skpdObj.name,
+            filled: !!data,
+            abk: data?.summary?.abk || "0.000",
+            lastUpdate: data?.timestamp || "-"
+          };
+        });
+        setMonitoringList(list);
+      }, [skpdList]);
 
-      useEffect(() => { if (activeTab === "MONITORING" && user) fetchMonitoringData(); }, [activeTab, user]);
+      useEffect(() => { if (activeTab === "MONITORING") fetchMonitoringData(); }, [activeTab, fetchMonitoringData]);
 
       // PROFIL DATA MAPPER
       const profilesDataMap = useMemo(() => ({
@@ -336,12 +329,14 @@
 
       useEffect(() => {
         const keys = Object.keys(profilesDataMap[jenisUnit]);
-        if (!keys.includes(activeBidang)) setActiveBidang(keys[0]);
-      }, [jenisUnit, profilesDataMap]);
+        if (!keys.includes(activeBidang)) setActiveBidang(keys[0] || "");
+      }, [jenisUnit, profilesDataMap, activeBidang]);
 
       const resultsData = useMemo(() => {
         let list = []; let totalJam = 0; let bPerJenjang = { PERTAMA: 0, MUDA: 0, MADYA: 0 };
         const currentTasks = profilesDataMap[jenisUnit];
+        if(!currentTasks) return { list: [], totalJam: 0, formasi: { PERTAMA: "0.000", MUDA: "0.000", MADYA: "0.000", TOTAL: "0.000" } };
+
         Object.values(currentTasks).forEach(taskList => {
           taskList?.forEach(task => {
             const v = answers[`${task.id}_vol`] || 0;
@@ -372,19 +367,18 @@
         autoSave({ answers: newAnswers, summary: { abk: resultsData.formasi.TOTAL } });
       };
 
-      const handleUpdateMaster = async (category, index, field, value) => {
-        if (!firebaseObj) return;
-        const { db, appId, doc, setDoc } = firebaseObj;
-        const newMaster = { ...masterTasks };
-        newMaster[category][index][field] = value;
+      const saveMasterTasksLocal = (newMaster) => {
         setMasterTasks(newMaster);
-        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
-        await setDoc(masterRef, newMaster);
+        localStorage.setItem(`${APP_PREFIX}master_tasks`, JSON.stringify(newMaster));
       };
 
-      const handleAddNewTaskMaster = async () => {
-        if (!firebaseObj) return;
-        const { db, appId, doc, setDoc } = firebaseObj;
+      const handleUpdateMaster = (category, index, field, value) => {
+        const newMaster = { ...masterTasks };
+        newMaster[category][index][field] = value;
+        saveMasterTasksLocal(newMaster);
+      };
+
+      const handleAddNewTaskMaster = () => {
         const prefixMap = { "SKPD": "SK", "BAPENDA": "BP", "BKAD_ANGGARAN": "BK.PA", "BKAD_AKUNTANSI": "BK.AK", "BKAD_ASET": "BK.AS", "BKAD_PERBENDAHARAAN": "BK.PB" };
         const prefix = prefixMap[activeBidangMaster] || "XX";
         const newId = `${prefix}.${(masterTasks[activeBidangMaster].length + 1).toString().padStart(2, '0')}`;
@@ -392,30 +386,87 @@
         
         const newMaster = { ...masterTasks };
         newMaster[activeBidangMaster] = [...newMaster[activeBidangMaster], newTask];
-        setMasterTasks(newMaster);
-        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
-        await setDoc(masterRef, newMaster);
+        saveMasterTasksLocal(newMaster);
       };
 
-      const handleDeleteMaster = async (category, index) => {
-        if (!firebaseObj) return;
-        const { db, appId, doc, setDoc } = firebaseObj;
+      const handleDeleteMaster = (category, index) => {
         const newMaster = { ...masterTasks };
         newMaster[category].splice(index, 1);
-        setMasterTasks(newMaster);
-        const masterRef = doc(db, 'artifacts', appId, 'public', 'data', 'master_configs', 'tasks');
-        await setDoc(masterRef, newMaster);
+        saveMasterTasksLocal(newMaster);
       };
 
-      const handleDeleteSKPD = async () => {
-        if (!user || !showDeleteModal || !firebaseObj) return;
-        const { db, appId, doc, deleteDoc } = firebaseObj;
-        const skpdDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'skpd_data', showDeleteModal.replace(/\s+/g, '_'));
-        try {
-          await deleteDoc(skpdDocRef);
-          fetchMonitoringData();
-          setShowDeleteModal(null);
-        } catch (e) { console.error(e); }
+      // FUNGSI EXPORT & IMPORT MASTER DATA
+      const handleDownloadMasterTemplate = () => {
+        const rows = [["Kategori", "ID", "Aktivitas", "Satuan Volume", "Satuan Waktu", "Norma Waktu", "Deskripsi"]];
+        Object.keys(masterTasks).forEach(cat => {
+          masterTasks[cat].forEach(t => {
+            rows.push([cat, t.id, t.label, t.uVol || "", t.uTime || "", t.dTime || 0, t.desc || ""]);
+          });
+        });
+        const csvContent = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\r\n");
+        const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Template_Master_Kegiatan.csv`; a.click();
+      };
+
+      const handleImportMasterCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const text = evt.target.result;
+          const lines = text.split(/\r?\n/);
+          const newMaster = { ...masterTasks };
+          let importedCount = 0;
+
+          lines.forEach((line, index) => {
+            if (index === 0 || !line.trim()) return; // Lewati header atau baris kosong
+            const delimiter = line.includes(';') ? ';' : ',';
+            const p = line.split(new RegExp(`${delimiter}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(x => x.replace(/^"|"$/g, "").trim());
+            
+            // Format: Kategori | ID | Aktivitas | uVol | uTime | dTime | desc
+            if (p.length >= 6 && p[0] && p[1]) {
+              const cat = p[0];
+              const id = p[1];
+              const label = p[2] || "Tanpa Judul";
+              const uVol = p[3] || "dokumen";
+              const uTime = p[4] || "jam";
+              const dTime = parseFloat(p[5]) || 0;
+              const desc = p[6] || "";
+
+              if (!newMaster[cat]) newMaster[cat] = []; // Buat kategori baru jika belum ada
+
+              const existingIdx = newMaster[cat].findIndex(t => t.id === id);
+              const newTask = { id, label, uVol, uTime, dTime, desc, dVol: 1 };
+
+              if (existingIdx >= 0) {
+                newMaster[cat][existingIdx] = { ...newMaster[cat][existingIdx], ...newTask };
+              } else {
+                newMaster[cat].push(newTask);
+              }
+              importedCount++;
+            }
+          });
+
+          saveMasterTasksLocal(newMaster);
+          alert(`Berhasil mengimpor/memperbarui ${importedCount} butir kegiatan master.`);
+          e.target.value = null; // Reset input
+        };
+        reader.readAsText(file);
+      };
+
+      const handleDeleteSKPD = () => {
+        if (!showDeleteModal) return;
+        const docId = showDeleteModal.replace(/\s+/g, '_');
+        
+        // Hapus dari local storage
+        localStorage.removeItem(`${APP_PREFIX}skpd_data_${docId}`);
+        fetchMonitoringData();
+        setShowDeleteModal(null);
+        
+        // Reset state jika yang dihapus adalah yang sedang dibuka
+        if(unitKerja === showDeleteModal) {
+            setAnswers({}); setBezetting({ PERTAMA: 0, MUDA: 0, MADYA: 0 }); setFulfillment({}); setLastSaved(null);
+        }
       };
 
       const handleDownloadTemplate = () => {
@@ -467,48 +518,125 @@
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ABK_${unitKerja}.csv`; a.click();
       };
 
+      // FUNGSI MANAJEMEN SKPD CUSTOM LOKAL
+      const handleSaveSkpdList = (newList) => {
+        setSkpdList(newList);
+        localStorage.setItem(`${APP_PREFIX}skpd_list`, JSON.stringify(newList));
+      };
+
+      const handleAddSkpd = () => {
+        if (!newSkpdName.trim()) return;
+        const isExist = skpdList.find(s => s.name.toLowerCase() === newSkpdName.trim().toLowerCase());
+        if (isExist) {
+          alert("Nama Unit Kerja/SKPD ini sudah ada di dalam referensi!");
+          return;
+        }
+        const newList = [...skpdList, { name: newSkpdName.trim(), type: newSkpdType }];
+        handleSaveSkpdList(newList);
+        setNewSkpdName("");
+        setNewSkpdType("SKPD");
+      };
+
+      const handleDeleteSkpdReference = (index) => {
+        if (skpdList.length <= 1) {
+          alert("Harus ada minimal 1 SKPD di dalam database!");
+          return;
+        }
+        const confirmDelete = window.confirm("Hapus SKPD ini dari referensi? (Data kuesioner yang sudah diisi untuk SKPD ini tidak akan terhapus, namun tidak akan muncul di monitoring).");
+        if (confirmDelete) {
+          const newList = [...skpdList];
+          newList.splice(index, 1);
+          handleSaveSkpdList(newList);
+        }
+      };
+
       const handleSKPDChangeConfirm = (nama) => {
         setUnitKerja(nama); setShowSKPDList(false);
-        if (nama.includes("Keuangan")) setJenisUnit("BKAD");
-        else if (nama.includes("Pendapatan")) setJenisUnit("BAPENDA");
-        else setJenisUnit("SKPD");
+        const targetSkpd = skpdList.find(s => s.name === nama);
+        if (targetSkpd) {
+          setJenisUnit(targetSkpd.type);
+        } else {
+          setJenisUnit("SKPD");
+        }
       };
 
       const handleAIAnalysis = async () => {
         if (resultsData.totalJam === 0) return;
+        
+        if (!customApiKey.trim()) {
+          setAiAnalysis("API Key belum dikonfigurasi. Silakan masukkan Gemini API Key Anda di menu PENGATURAN AI terlebih dahulu.");
+          setActiveTab("PENGATURAN");
+          return;
+        }
+
         setIsAiLoading(true); setAiAnalysis(null);
         const prompt = `Unit: ${unitKerja}, ABK: ${resultsData.formasi.TOTAL}. Rekomendasi strategis pengisian sesuai PMK 78/2025.`;
         try {
-          const insight = await callGemini(prompt, "Pakar SDM Pemda");
+          const insight = await callGemini(prompt, "Pakar SDM Pemda", customApiKey);
           setAiAnalysis(insight);
-        } catch (e) { setAiAnalysis("AI sedang sibuk."); }
+        } catch (e) { 
+          setAiAnalysis(`Gagal memproses analisis AI. Pastikan API Key valid.\n\nError Detail: ${e.message}`); 
+        }
         setIsAiLoading(false);
       };
 
       const handleLoginSubmit = (e) => {
         e.preventDefault();
         if (loginName.trim() !== "") {
+          localStorage.setItem(`${APP_PREFIX}user_name`, loginName);
           setIsLoggedIn(true);
         }
       };
 
-      // Tampilan Menunggu Firebase
-      if (!firebaseReady) {
-        return <div className="min-h-screen flex items-center justify-center font-black text-indigo-600"><i className="ph-bold ph-spinner animate-spin text-4xl mr-3"></i> Memuat Aplikasi...</div>;
-      }
+      const handleLogout = () => {
+        localStorage.removeItem(`${APP_PREFIX}user_name`);
+        setIsLoggedIn(false);
+        setLoginName("");
+      };
+
+      const handleLogoUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if(file.size > 1500000) {
+           alert("Ukuran file logo terlalu besar. Maksimal 1.5MB");
+           return;
+        }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          setCustomLogo(evt.target.result);
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const saveBranding = () => {
+        localStorage.setItem(`${APP_PREFIX}app_name`, customAppName);
+        localStorage.setItem(`${APP_PREFIX}pemda_name`, customPemdaName);
+        localStorage.setItem(`${APP_PREFIX}app_theme`, appTheme);
+        if(customLogo) {
+          localStorage.setItem(`${APP_PREFIX}app_logo`, customLogo);
+        } else {
+          localStorage.removeItem(`${APP_PREFIX}app_logo`);
+        }
+        setBrandingSavedMsg("Kustomisasi berhasil disimpan!");
+        setTimeout(() => setBrandingSavedMsg(""), 3000);
+      };
 
       // Tampilan Login (Jika belum login)
       if (!isLoggedIn) {
         return (
-          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-slate-100 p-4 w-full">
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 p-4 w-full">
             <div className="bg-white p-10 rounded-[2.5rem] shadow-xl w-full max-w-md border border-slate-100 animate-in fade-in zoom-in-95 duration-300">
-              <div className="flex justify-center mb-8">
-                 <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-lg shadow-indigo-200">
-                   <i className="ph-fill ph-calculator text-[40px]"></i>
+              <div className="flex justify-center mb-6">
+                 <div className={`p-4 rounded-3xl text-white shadow-lg flex items-center justify-center w-24 h-24 overflow-hidden ${t.bg}`}>
+                   {customLogo ? (
+                     <img src={customLogo} alt="App Logo" className="w-full h-full object-contain bg-white rounded-xl" />
+                   ) : (
+                     <i className="ph-fill ph-calculator text-[48px]"></i>
+                   )}
                  </div>
               </div>
-              <h2 className="text-2xl font-black text-slate-800 text-center mb-2 italic uppercase">Kalkulator JF AKN</h2>
-              <p className="text-xs font-bold text-slate-400 text-center mb-10 uppercase tracking-widest">Sistem Analisis Beban Kerja Terpadu</p>
+              <h2 className="text-2xl font-black text-slate-800 text-center mb-2 italic uppercase">{customAppName}</h2>
+              <p className="text-xs font-bold text-slate-400 text-center mb-10 uppercase tracking-widest">{customPemdaName}</p>
               
               <form onSubmit={handleLoginSubmit} className="space-y-6">
                 <div>
@@ -521,16 +649,17 @@
                       value={loginName}
                       onChange={(e) => setLoginName(e.target.value)}
                       placeholder="Masukkan nama anda..." 
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      className={`w-full bg-slate-50 border border-slate-200 rounded-xl pl-12 pr-4 py-3 text-sm font-bold outline-none focus:ring-2 transition-all ${t.ring}`}
                     />
                   </div>
                 </div>
-                <button type="submit" className="w-full flex justify-center items-center gap-2 bg-indigo-600 text-white font-black py-4 rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all">
+                <button type="submit" className={`w-full flex justify-center items-center gap-2 text-white font-black py-4 rounded-xl text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all ${t.bg} ${t.hover}`}>
                   Masuk Aplikasi <i className="ph-bold ph-arrow-right text-[14px]"></i>
                 </button>
               </form>
               
               <div className="mt-8 text-center border-t border-slate-100 pt-6">
+                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Data Tersimpan Aman di Perangkat Anda</p>
                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Didukung oleh Cloud AI</p>
               </div>
             </div>
@@ -550,11 +679,19 @@
           {/* Sidebar */}
           <aside className={`fixed left-0 top-0 h-full w-72 bg-white border-r border-slate-200 p-6 flex flex-col shadow-2xl lg:shadow-sm z-50 overflow-y-auto custom-scrollbar text-slate-700 transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
             <div className="flex items-center justify-between gap-3 mb-10 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><i className="ph-fill ph-calculator text-[24px]"></i></div>
-                <h1 className="font-black text-xl tracking-tight leading-none uppercase italic text-slate-800">JF <span className="text-indigo-600">AKN</span></h1>
+              <div className="flex items-center gap-3 w-full overflow-hidden">
+                <div className={`p-2 rounded-xl text-white shadow-lg shrink-0 flex items-center justify-center w-10 h-10 overflow-hidden ${t.bg}`}>
+                   {customLogo ? (
+                     <img src={customLogo} alt="Logo" className="w-full h-full object-contain bg-white rounded-lg" />
+                   ) : (
+                     <i className="ph-fill ph-calculator text-[20px]"></i>
+                   )}
+                </div>
+                <h1 className="font-black text-lg tracking-tight leading-none uppercase italic text-slate-800 truncate" title={customAppName}>
+                  {customAppName.split(' ')[0]} <span className={t.text}>{customAppName.split(' ').slice(1).join(' ')}</span>
+                </h1>
               </div>
-              <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition-colors">
+              <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden p-2 text-slate-400 hover:bg-slate-100 rounded-xl transition-colors shrink-0">
                 <i className="ph-bold ph-x text-[20px]"></i>
               </button>
             </div>
@@ -562,17 +699,19 @@
             <nav className="space-y-6 flex-1">
               <div className="space-y-1">
                 {[
+                  { id: "PANDUAN", label: "CARA PAKAI", icon: "ph-book-open" },
                   { id: "MONITORING", label: "MONITORING", icon: "ph-squares-four" },
                   { id: "KUESIONER", label: "KUESIONER", icon: "ph-clipboard-text" },
                   { id: "PROYEKSI", label: "RENCANA FORMASI", icon: "ph-target" },
                   { id: "LAPORAN", label: "LAPORAN ABK", icon: "ph-file-text" },
-                  { id: "MASTER", label: "REFERENSI DATA", icon: "ph-database" }
-                ].map(t => (
-                  <button key={t.id} onClick={() => { setActiveTab(t.id); setIsMobileMenuOpen(false); }}
-                    className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${activeTab === t.id ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}
+                  { id: "MASTER", label: "REFERENSI DATA", icon: "ph-database" },
+                  { id: "PENGATURAN", label: "PENGATURAN AI", icon: "ph-gear" }
+                ].map(tab => (
+                  <button key={tab.id} onClick={() => { setActiveTab(tab.id); setIsMobileMenuOpen(false); }}
+                    className={`w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${activeTab === tab.id ? `${t.light} ${t.text} shadow-sm border ${t.border}` : 'text-slate-400 hover:bg-slate-50 border border-transparent'}`}
                   >
-                    <i className={`ph-fill ${t.icon} text-[16px]`}></i>
-                    {t.label}
+                    <i className={`ph-fill ${tab.icon} text-[16px]`}></i>
+                    {tab.label}
                   </button>
                 ))}
               </div>
@@ -583,7 +722,7 @@
                   <div className="space-y-1">
                     {Object.keys(profilesDataMap[jenisUnit]).map(b => (
                       <button key={b} onClick={() => { setActiveBidang(b); setIsMobileMenuOpen(false); }}
-                        className={`w-full text-left px-4 py-2.5 rounded-lg font-black tracking-wide transition-all border text-[9px] leading-tight ${activeBidang === b ? 'bg-indigo-600 text-white border-indigo-500 shadow-md' : 'text-slate-400 hover:bg-slate-50 border-transparent'}`}
+                        className={`w-full text-left px-4 py-2.5 rounded-lg font-black tracking-wide transition-all border text-[9px] leading-tight ${activeBidang === b ? `${t.bg} text-white ${t.border} shadow-md` : 'text-slate-400 hover:bg-slate-50 border-transparent'}`}
                       >
                         {b}
                       </button>
@@ -594,28 +733,29 @@
             </nav>
 
             <div className="pt-6 border-t border-slate-100 space-y-2 shrink-0">
-              <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 mb-2 shadow-inner font-black">
+              <div className={`${t.light} p-3 rounded-xl border ${t.border} mb-2 shadow-inner font-black`}>
                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[8px] uppercase text-indigo-400">Halo, {loginName}</span>
-                    {isSyncing ? <i className="ph-bold ph-arrows-clockwise text-[10px] animate-spin text-indigo-600"></i> : <i className="ph-fill ph-cloud text-[10px] text-emerald-500"></i>}
+                    <span className={`text-[8px] uppercase ${t.text}`}>Halo, {loginName}</span>
+                    {isSyncing ? <i className={`ph-bold ph-arrows-clockwise text-[10px] animate-spin ${t.text}`}></i> : <i className={`ph-fill ph-device-mobile text-[10px] ${t.text}`}></i>}
                  </div>
-                 <p className="text-[9px] font-bold text-slate-600 truncate">{lastSaved ? `Sync: ${lastSaved}` : 'Menyinkronkan...'}</p>
+                 <p className={`text-[9px] font-bold truncate ${t.text}`}>{lastSaved ? `Lokal: ${lastSaved}` : 'Menyimpan...'}</p>
               </div>
               {deferredPrompt && (
-                 <button onClick={handleInstallClick} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl text-[10px] hover:shadow-lg transition-all shadow-md animate-pulse mb-2">
+                 <button onClick={handleInstallClick} className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-white rounded-xl text-[10px] hover:shadow-lg transition-all shadow-md animate-pulse mb-2 ${t.bg} ${t.hover}`}>
                     <i className="ph-fill ph-device-mobile text-[14px]"></i> INSTALL APLIKASI
                  </button>
               )}
-              <button onClick={() => fileInputRef.current.click()} className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] hover:bg-emerald-700 transition-all shadow-md">
+              <button onClick={() => fileInputRef.current.click()} className={`w-full flex items-center gap-3 px-4 py-3 text-white rounded-xl text-[10px] shadow-md transition-all ${t.bg} ${t.hover}`}>
                 <i className="ph-bold ph-upload-simple text-[14px]"></i> IMPORT CSV
               </button>
-              <button onClick={handleDownloadTemplate} className="w-full flex items-center gap-3 px-4 py-2 bg-white text-slate-500 rounded-xl text-[10px] hover:bg-slate-50 border border-slate-200 shadow-sm">
+              <button onClick={handleDownloadTemplate} className="w-full flex items-center gap-3 px-4 py-2 bg-white text-slate-500 rounded-xl text-[10px] hover:bg-slate-50 border border-slate-200 shadow-sm transition-all">
                 <i className="ph-bold ph-download text-[14px]"></i> UNDUH TEMPLATE
               </button>
-              <button onClick={() => setIsLoggedIn(false)} className="w-full flex items-center gap-3 px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[10px] hover:bg-rose-100 border border-rose-100 shadow-sm transition-all mt-2">
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 bg-rose-50 text-rose-500 rounded-xl text-[10px] hover:bg-rose-100 border border-rose-100 shadow-sm transition-all mt-2">
                 <i className="ph-bold ph-sign-out text-[14px]"></i> KELUAR
               </button>
               <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" accept=".csv" />
+              <input type="file" ref={masterFileInputRef} onChange={handleImportMasterCSV} className="hidden" accept=".csv" />
             </div>
           </aside>
 
@@ -624,28 +764,32 @@
               {/* Header */}
               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 lg:gap-6 mb-8 lg:mb-10">
                 <div className="flex items-center gap-3 w-full lg:w-2/3">
-                  <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-3 md:p-4 bg-white border border-slate-200 rounded-2xl shadow-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex-shrink-0">
+                  <button onClick={() => setIsMobileMenuOpen(true)} className={`lg:hidden p-3 md:p-4 bg-white border border-slate-200 rounded-2xl shadow-sm hover:bg-slate-50 transition-all flex-shrink-0 ${t.text}`}>
                     <i className="ph-bold ph-list text-[20px] md:text-[24px]"></i>
                   </button>
                   <div className="relative w-full">
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-2 items-center gap-2 hidden md:flex">
                       <i className="ph-bold ph-magnifying-glass text-[12px]"></i> Unit Kerja Aktif:
                     </p>
-                    <div onClick={() => setShowSKPDList(!showSKPDList)} className="bg-white border border-slate-200 p-3 md:p-4 rounded-2xl shadow-sm cursor-pointer flex justify-between items-center hover:border-indigo-400 transition-all">
+                    <div onClick={() => setShowSKPDList(!showSKPDList)} className={`bg-white border border-slate-200 p-3 md:p-4 rounded-2xl shadow-sm cursor-pointer flex justify-between items-center transition-all ${t.hoverBorder}`}>
                       <span className="text-slate-800 text-sm md:text-lg truncate">{unitKerja}</span>
                       <i className={`ph-bold ph-caret-down text-[16px] md:text-[20px] text-slate-400 transition-transform ${showSKPDList ? 'rotate-180' : ''}`}></i>
                     </div>
                     {showSKPDList && (
                       <div className="absolute top-full left-0 w-full bg-white mt-2 rounded-2xl md:rounded-3xl shadow-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in">
                         <div className="p-3 md:p-4 border-b bg-slate-50">
-                          <input autoFocus placeholder="Cari..." className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={searchSKPD} onChange={(e) => setSearchSKPD(e.target.value)} />
+                          <input autoFocus placeholder="Cari..." className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 transition-all ${t.ring}`} value={searchSKPD} onChange={(e) => setSearchSKPD(e.target.value)} />
                         </div>
                         <div className="max-h-60 md:max-h-80 overflow-y-auto custom-scrollbar">
-                          {DAFTAR_SKPD_LIST_GLOBAL.filter(s=>s.toLowerCase().includes(searchSKPD.toLowerCase())).map((skpd) => (
-                            <div key={skpd} onClick={() => handleSKPDChangeConfirm(skpd)} className={`px-4 md:px-6 py-3 md:py-4 text-xs font-bold hover:bg-indigo-50 cursor-pointer border-b last:border-none ${unitKerja === skpd ? 'text-indigo-600 bg-indigo-50' : ''}`}>
-                              {skpd}
+                          {skpdList.filter(s=>s.name.toLowerCase().includes(searchSKPD.toLowerCase())).map((skpdObj) => (
+                            <div key={skpdObj.name} onClick={() => handleSKPDChangeConfirm(skpdObj.name)} className={`px-4 md:px-6 py-3 md:py-4 text-xs font-bold hover:bg-slate-50 cursor-pointer border-b last:border-none flex justify-between items-center ${unitKerja === skpdObj.name ? `${t.text} ${t.light}` : ''}`}>
+                              <span className="truncate pr-4">{skpdObj.name}</span>
+                              <span className={`px-2 py-0.5 rounded-[4px] text-[8px] uppercase shrink-0 ${skpdObj.type === 'BKAD' ? 'bg-emerald-100 text-emerald-700' : skpdObj.type === 'BAPENDA' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>{skpdObj.type}</span>
                             </div>
                           ))}
+                          {skpdList.filter(s=>s.name.toLowerCase().includes(searchSKPD.toLowerCase())).length === 0 && (
+                             <div className="px-6 py-8 text-center text-xs text-slate-400 italic">Tidak ditemukan. Coba tambah di menu Referensi Data.</div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -654,11 +798,11 @@
                 
                 <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto mt-2 lg:mt-0 items-end">
                   {deferredPrompt && (
-                    <button onClick={handleInstallClick} className="w-full sm:w-auto bg-indigo-600 text-white px-6 py-3 md:py-4 lg:py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all h-fit self-end animate-pulse">
+                    <button onClick={handleInstallClick} className={`w-full sm:w-auto text-white px-6 py-3 md:py-4 lg:py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 transition-all h-fit self-end animate-pulse ${t.bg} ${t.hover}`}>
                       <i className="ph-fill ph-device-mobile text-[16px]"></i> INSTALL PWA
                     </button>
                   )}
-                  <button onClick={handleAIAnalysis} disabled={isAiLoading} className="w-full sm:w-auto bg-purple-600 text-white px-8 py-3 md:py-4 lg:py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 hover:bg-purple-700 transition-all h-fit self-end">
+                  <button onClick={handleAIAnalysis} disabled={isAiLoading} className={`w-full sm:w-auto text-white px-8 py-3 md:py-4 lg:py-3 rounded-2xl text-xs shadow-xl flex items-center justify-center gap-2 transition-all h-fit self-end ${t.bg} ${t.hover}`}>
                      {isAiLoading ? <i className="ph-bold ph-spinner text-[16px] animate-spin"></i> : <i className="ph-fill ph-sparkle text-[16px]"></i>} ANALISIS AI
                   </button>
                 </div>
@@ -670,10 +814,10 @@
                    <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100">
                       <div className="bg-rose-100 text-rose-600 w-12 h-12 rounded-2xl flex items-center justify-center mb-6"><i className="ph-fill ph-trash text-[24px]"></i></div>
                       <h3 className="text-xl text-slate-800 mb-2 leading-tight text-center">Hapus data {showDeleteModal}?</h3>
-                      <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed text-center">Seluruh jawaban kuesioner unit ini akan dihapus permanen dari Cloud.</p>
+                      <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed text-center">Seluruh jawaban kuesioner unit ini akan dihapus dari perangkat Anda.</p>
                       <div className="flex gap-3">
-                         <button onClick={() => setShowDeleteModal(null)} className="flex-1 px-4 py-3 rounded-xl bg-slate-100 text-slate-600 text-xs">BATAL</button>
-                         <button onClick={handleDeleteSKPD} className="flex-1 px-4 py-3 rounded-xl bg-rose-600 text-white text-xs shadow-lg shadow-rose-100">HAPUS</button>
+                         <button onClick={() => setShowDeleteModal(null)} className="flex-1 px-4 py-3 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">BATAL</button>
+                         <button onClick={handleDeleteSKPD} className="flex-1 px-4 py-3 rounded-xl bg-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-100">HAPUS</button>
                       </div>
                    </div>
                 </div>
@@ -685,7 +829,7 @@
                    <div className="bg-white rounded-[2rem] p-8 max-w-2xl w-full shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col">
                       <div className="flex justify-between items-center mb-6 shrink-0">
                         <div className="flex items-center gap-3">
-                          <div className="bg-purple-100 text-purple-600 w-12 h-12 rounded-2xl flex items-center justify-center"><i className="ph-fill ph-sparkle text-[24px]"></i></div>
+                          <div className={`${t.light} ${t.text} w-12 h-12 rounded-2xl flex items-center justify-center`}><i className="ph-fill ph-sparkle text-[24px]"></i></div>
                           <div>
                             <h3 className="text-xl text-slate-800 leading-tight font-black">Rekomendasi AI</h3>
                             <p className="text-[10px] text-slate-400 uppercase tracking-widest">{unitKerja}</p>
@@ -701,16 +845,67 @@
                       </div>
                       
                       <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end shrink-0">
-                        <button onClick={() => setAiAnalysis(null)} className="px-6 py-3 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-black transition-colors shadow-lg">TUTUP ANALISIS</button>
+                        <button onClick={() => setAiAnalysis(null)} className={`px-6 py-3 rounded-xl text-white text-xs font-bold transition-colors shadow-lg ${t.bg} ${t.hover}`}>TUTUP ANALISIS</button>
                       </div>
                    </div>
+                </div>
+              )}
+
+              {/* KONTEN PANDUAN (CARA PAKAI) */}
+              {activeTab === "PANDUAN" && (
+                <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-sm animate-in fade-in">
+                  <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-6 md:mb-10 leading-none">
+                    <i className={`ph-fill ph-book-open text-[20px] md:text-[24px] ${t.text}`}></i> Panduan Penggunaan
+                  </h3>
+
+                  <div className="space-y-6 md:space-y-8 max-w-4xl">
+                    <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl text-white shadow-md ${t.bg}`}>1</div>
+                      <div className={`flex-1 ${t.light} p-6 rounded-3xl border ${t.border} shadow-inner`}>
+                        <h4 className={`text-lg font-black mb-2 flex items-center gap-2 ${t.text}`}>
+                          <i className="ph-fill ph-gear"></i> Pengaturan Sistem & Branding
+                        </h4>
+                        <p className="text-sm text-slate-600 leading-relaxed font-medium">Langkah pertama sebelum menggunakan aplikasi adalah masuk ke menu <strong>PENGATURAN AI</strong> (menu paling bawah). Di sana Anda dapat mengunggah logo instansi Anda, mengubah nama aplikasi, memilih tema warna, dan yang paling penting: <strong>Memasukkan API Key Gemini</strong> agar fitur Analisis AI dapat berfungsi maksimal.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl text-white shadow-md ${t.bg}`}>2</div>
+                      <div className={`flex-1 ${t.light} p-6 rounded-3xl border ${t.border} shadow-inner`}>
+                        <h4 className={`text-lg font-black mb-2 flex items-center gap-2 ${t.text}`}>
+                          <i className="ph-fill ph-database"></i> Kelola Referensi Data Master
+                        </h4>
+                        <p className="text-sm text-slate-600 leading-relaxed font-medium">Buka menu <strong>REFERENSI DATA</strong>. Pastikan Anda menyesuaikan <strong>Daftar Nama SKPD</strong> sesuai dengan instansi di Pemerintah Daerah Anda (Pilih klasifikasi yang tepat: SKPD Umum, BKAD, atau BAPENDA). Anda juga dapat mengunduh format CSV, mengedit via Excel, lalu mengimpornya kembali untuk memperbarui <strong>Master Butir Kegiatan</strong>.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl text-white shadow-md ${t.bg}`}>3</div>
+                      <div className={`flex-1 ${t.light} p-6 rounded-3xl border ${t.border} shadow-inner`}>
+                        <h4 className={`text-lg font-black mb-2 flex items-center gap-2 ${t.text}`}>
+                          <i className="ph-fill ph-clipboard-text"></i> Pengisian Kuesioner
+                        </h4>
+                        <p className="text-sm text-slate-600 leading-relaxed font-medium">Klik bagian <strong>Unit Kerja Aktif</strong> (di bagian atas layar) untuk memilih SKPD yang ingin Anda evaluasi. Setelah itu, buka menu <strong>KUESIONER</strong> dan isikan <strong>Volume</strong> serta <strong>Norma Waktu</strong> pada setiap butir kegiatan yang dilakukan unit tersebut. Sistem akan menyimpan hasil kerja Anda secara otomatis.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 md:gap-6 items-start">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-black text-xl text-white shadow-md ${t.bg}`}>4</div>
+                      <div className={`flex-1 ${t.light} p-6 rounded-3xl border ${t.border} shadow-inner`}>
+                        <h4 className={`text-lg font-black mb-2 flex items-center gap-2 ${t.text}`}>
+                          <i className="ph-fill ph-chart-bar"></i> Pantau, Proyeksi & Laporan
+                        </h4>
+                        <p className="text-sm text-slate-600 leading-relaxed font-medium">Pantau rekapitulasi progres seluruh SKPD di menu <strong>MONITORING</strong>. Anda dapat melihat proyeksi kebutuhan SDM 5 tahun ke depan melalui menu <strong>RENCANA FORMASI</strong>. Unduh laporan final dalam format Excel (CSV) di menu <strong>LAPORAN ABK</strong>. Jangan lupa gunakan tombol <strong>ANALISIS AI</strong> di pojok kanan atas untuk mendapatkan ringkasan cerdas berbasis AI!</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {activeTab === "MONITORING" && (
                 <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-sm animate-in fade-in">
                   <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-6 md:mb-10 leading-none">
-                    <i className="ph-fill ph-squares-four text-[20px] md:text-[24px] text-indigo-600"></i> Monitoring Progres Pengisian
+                    <i className={`ph-fill ph-squares-four text-[20px] md:text-[24px] ${t.text}`}></i> Monitoring Progres Pengisian
                   </h3>
                   <div className="overflow-x-auto rounded-2xl md:rounded-3xl border border-slate-100 shadow-inner">
                     <table className="w-full text-left border-collapse">
@@ -733,7 +928,7 @@
                                 <span className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-[9px] uppercase flex items-center justify-center gap-1 w-fit mx-auto leading-none"><i className="ph-bold ph-circle-dashed text-[10px]"></i> Belum</span>
                               }
                             </td>
-                            <td className="px-4 py-6 text-center text-indigo-600">{m.abk}</td>
+                            <td className={`px-4 py-6 text-center ${t.text}`}>{m.abk}</td>
                             <td className="px-4 py-6 text-center">
                                {m.filled && (
                                  <button onClick={() => setShowDeleteModal(m.nama)} className="p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><i className="ph-bold ph-trash text-[16px]"></i></button>
@@ -750,48 +945,123 @@
 
               {activeTab === "MASTER" && (
                 <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-sm animate-in fade-in">
-                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 md:mb-10 border-b pb-6 gap-4">
+                  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 md:mb-8 border-b pb-6 gap-4">
                     <div>
                       <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3">
-                        <i className="ph-fill ph-database text-[20px] md:text-[24px] text-indigo-600"></i> Referensi Data Master
+                        <i className={`ph-fill ph-database text-[20px] md:text-[24px] ${t.text}`}></i> Referensi Data Master
                       </h3>
-                      <p className="text-[10px] md:text-xs text-slate-400 mt-1 uppercase tracking-widest italic leading-none">Pusat Manajemen Basis Data Butir Kegiatan</p>
+                      <p className="text-[10px] md:text-xs text-slate-400 mt-1 uppercase tracking-widest italic leading-none">Pusat Manajemen Basis Data Aplikasi</p>
                     </div>
-                    <div className="flex flex-wrap lg:flex-nowrap gap-2 w-full lg:w-auto">
-                       <select className="flex-1 lg:flex-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={activeBidangMaster} onChange={(e) => setActiveBidangMaster(e.target.value)}>
-                          {Object.keys(masterTasks).map(cat => <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>)}
-                       </select>
-                       <div className="relative flex-1 md:w-64">
-                          <input placeholder="Cari di master..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={searchMaster} onChange={(e) => setSearchMaster(e.target.value)} />
-                          <i className="ph-bold ph-magnifying-glass text-[14px] absolute left-4 top-3.5 text-slate-400"></i>
-                       </div>
-                       <button onClick={handleAddNewTaskMaster} className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all">
-                         <i className="ph-bold ph-plus text-[20px]"></i>
-                       </button>
-                    </div>
+                  </div>
+
+                  {/* SUB-MENU TAB UNTUK MASTER */}
+                  <div className="flex gap-2 md:gap-4 mb-8 bg-slate-50 p-1.5 rounded-2xl w-fit">
+                    <button onClick={() => setMasterTabMode('KEGIATAN')} className={`px-4 md:px-6 py-2.5 text-xs font-black rounded-xl transition-all ${masterTabMode === 'KEGIATAN' ? `bg-white ${t.text} shadow-sm` : 'text-slate-400 hover:text-slate-600'}`}>
+                       Master Butir Kegiatan
+                    </button>
+                    <button onClick={() => setMasterTabMode('SKPD')} className={`px-4 md:px-6 py-2.5 text-xs font-black rounded-xl transition-all ${masterTabMode === 'SKPD' ? `bg-white ${t.text} shadow-sm` : 'text-slate-400 hover:text-slate-600'}`}>
+                       Daftar Nama SKPD (Pemda)
+                    </button>
                   </div>
                   
-                  <div className="space-y-12">
-                     {masterTasks[activeBidangMaster]?.filter(t => t.label.toLowerCase().includes(searchMaster.toLowerCase()) || t.id.toLowerCase().includes(searchMaster.toLowerCase())).map((t, idx) => (
-                        <div key={t.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-6">
-                           <div className="w-20 shrink-0 font-mono text-[10px] bg-slate-100 flex items-center justify-center rounded-xl h-10">{t.id}</div>
-                           <div className="flex-1 space-y-4">
-                              <input className="w-full text-xs p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-200" value={t.label} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'label', e.target.value)} />
-                              <textarea className="w-full text-[10px] p-3 bg-slate-50 rounded-xl outline-none h-20" value={t.desc} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'desc', e.target.value)} />
-                           </div>
-                           <div className="w-32 shrink-0 space-y-2">
-                              <div className="text-[8px] uppercase text-slate-400 text-center">Norma Jam</div>
-                              <input type="number" className="w-full text-center p-3 bg-indigo-50 rounded-xl text-indigo-600 text-lg h-14" value={t.dTime} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'dTime', Number(e.target.value))} />
-                              <button onClick={() => handleDeleteMaster(activeBidangMaster, idx)} className="w-full p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-all flex items-center justify-center gap-1 text-[9px]">
-                                <i className="ph-bold ph-trash text-[12px]"></i> HAPUS
-                              </button>
-                           </div>
-                        </div>
-                     ))}
-                     {masterTasks[activeBidangMaster]?.filter(t => t.label.toLowerCase().includes(searchMaster.toLowerCase()) || t.id.toLowerCase().includes(searchMaster.toLowerCase())).length === 0 && (
-                       <div className="py-20 text-center text-slate-300 italic">Tidak ada data master yang cocok</div>
-                     )}
-                  </div>
+                  {/* KONTEN: MASTER KEGIATAN */}
+                  {masterTabMode === "KEGIATAN" && (
+                    <div className="animate-in fade-in slide-in-from-bottom-2">
+                      <div className="flex flex-wrap gap-2 w-full mb-8">
+                         <select className={`flex-1 lg:flex-none bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 transition-all ${t.ring}`} value={activeBidangMaster} onChange={(e) => setActiveBidangMaster(e.target.value)}>
+                            {Object.keys(masterTasks).map(cat => <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>)}
+                         </select>
+                         <div className="relative flex-1 lg:w-auto">
+                            <input placeholder="Cari di master..." className={`w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 transition-all ${t.ring}`} value={searchMaster} onChange={(e) => setSearchMaster(e.target.value)} />
+                            <i className="ph-bold ph-magnifying-glass text-[14px] absolute left-4 top-3.5 text-slate-400"></i>
+                         </div>
+                         
+                         <div className="flex gap-2 w-full sm:w-auto mt-2 sm:mt-0 ml-auto">
+                           <button onClick={handleDownloadMasterTemplate} title="Unduh Format / Backup Data Master" className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-600 p-3 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center justify-center">
+                             <i className="ph-bold ph-download-simple text-[20px]"></i>
+                           </button>
+                           <button onClick={() => masterFileInputRef.current.click()} title="Import / Timpa Data Master via CSV" className="flex-1 sm:flex-none bg-white border border-slate-200 text-emerald-600 p-3 rounded-xl hover:bg-emerald-50 shadow-sm transition-all flex items-center justify-center">
+                             <i className="ph-bold ph-upload-simple text-[20px]"></i>
+                           </button>
+                           <button onClick={handleAddNewTaskMaster} title="Tambah Manual" className={`flex-1 sm:flex-none text-white p-3 rounded-xl shadow-lg transition-all flex items-center justify-center ${t.bg} ${t.hover}`}>
+                             <i className="ph-bold ph-plus text-[20px]"></i>
+                           </button>
+                         </div>
+                      </div>
+                      
+                      <div className="space-y-6 md:space-y-12">
+                         {masterTasks[activeBidangMaster]?.filter(item => item.label.toLowerCase().includes(searchMaster.toLowerCase()) || item.id.toLowerCase().includes(searchMaster.toLowerCase())).map((item, idx) => (
+                            <div key={item.id} className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 md:gap-6">
+                               <div className="w-20 shrink-0 font-mono text-[10px] bg-slate-100 flex items-center justify-center rounded-xl h-10">{item.id}</div>
+                               <div className="flex-1 space-y-4">
+                                  <input className={`w-full text-xs p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 transition-all ${t.ring}`} value={item.label} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'label', e.target.value)} />
+                                  <textarea className={`w-full text-[10px] p-3 bg-slate-50 rounded-xl outline-none h-20 focus:ring-2 transition-all ${t.ring}`} value={item.desc} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'desc', e.target.value)} />
+                               </div>
+                               <div className="w-full md:w-32 shrink-0 space-y-2">
+                                  <div className="text-[8px] uppercase text-slate-400 text-center hidden md:block">Norma Jam</div>
+                                  <input type="number" className={`w-full text-center p-3 rounded-xl text-lg md:h-14 outline-none focus:ring-2 transition-all ${t.light} ${t.text} ${t.ring}`} placeholder="Norma" value={item.dTime} onChange={(e) => handleUpdateMaster(activeBidangMaster, idx, 'dTime', Number(e.target.value))} />
+                                  <button onClick={() => handleDeleteMaster(activeBidangMaster, idx)} className="w-full p-2 text-rose-400 hover:bg-rose-50 rounded-lg transition-all flex items-center justify-center gap-1 text-[9px]">
+                                    <i className="ph-bold ph-trash text-[12px]"></i> HAPUS
+                                  </button>
+                               </div>
+                            </div>
+                         ))}
+                         {masterTasks[activeBidangMaster]?.filter(item => item.label.toLowerCase().includes(searchMaster.toLowerCase()) || item.id.toLowerCase().includes(searchMaster.toLowerCase())).length === 0 && (
+                           <div className="py-20 text-center text-slate-300 italic">Tidak ada data master yang cocok</div>
+                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* KONTEN: DAFTAR NAMA SKPD */}
+                  {masterTabMode === "SKPD" && (
+                    <div className="animate-in fade-in slide-in-from-bottom-2 space-y-8">
+                       <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 flex flex-col md:flex-row gap-4 items-end shadow-inner">
+                          <div className="flex-1 w-full space-y-2">
+                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1">Nama Organisasi (SKPD/Unit)</label>
+                             <input value={newSkpdName} onChange={e => setNewSkpdName(e.target.value)} placeholder="Misal: Badan Pengelola Keuangan..." className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 shadow-sm transition-all ${t.ring}`} />
+                          </div>
+                          <div className="w-full md:w-64 space-y-2">
+                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1">Klasifikasi Sistem</label>
+                             <select value={newSkpdType} onChange={e => setNewSkpdType(e.target.value)} className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 shadow-sm transition-all ${t.ring}`}>
+                               <option value="SKPD">SKPD Umum</option>
+                               <option value="BKAD">Pengelola Keuangan (BKAD)</option>
+                               <option value="BAPENDA">Pengelola Pendapatan (BAPENDA)</option>
+                             </select>
+                          </div>
+                          <button onClick={handleAddSkpd} className={`w-full md:w-auto text-white px-6 py-3.5 rounded-xl text-xs font-black shadow-lg transition-all flex items-center justify-center gap-2 ${t.bg} ${t.hover}`}>
+                             <i className="ph-bold ph-plus text-[16px]"></i> TAMBAH
+                          </button>
+                       </div>
+
+                       <div className="overflow-x-auto rounded-3xl border border-slate-200 shadow-sm">
+                         <table className="w-full text-left border-collapse text-xs">
+                           <thead className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-slate-200">
+                             <tr><th className="px-6 py-5">Nama SKPD Terdaftar</th><th className="px-6 py-5">Kategori / Templat Kuesioner</th><th className="px-6 py-5 text-right">Aksi</th></tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                             {skpdList.map((s, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-6 py-5 text-sm">{s.name}</td>
+                                  <td className="px-6 py-5">
+                                     <span className={`px-3 py-1.5 rounded-lg text-[9px] uppercase tracking-wider font-black inline-flex items-center gap-1.5 ${s.type === 'BKAD' ? 'bg-emerald-100 text-emerald-700' : s.type === 'BAPENDA' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                                       <i className={`ph-fill ${s.type === 'BKAD' ? 'ph-vault' : s.type === 'BAPENDA' ? 'ph-coins' : 'ph-buildings'} text-[12px]`}></i>
+                                       {s.type === 'SKPD' ? 'SKPD UMUM' : s.type}
+                                     </span>
+                                  </td>
+                                  <td className="px-6 py-5 text-right">
+                                    <button onClick={() => handleDeleteSkpdReference(idx)} className="text-rose-400 hover:bg-rose-100 bg-rose-50 p-2 rounded-xl transition-all shadow-sm">
+                                      <i className="ph-bold ph-trash text-[16px]"></i>
+                                    </button>
+                                  </td>
+                                </tr>
+                             ))}
+                           </tbody>
+                         </table>
+                       </div>
+                    </div>
+                  )}
+
                 </div>
               )}
 
@@ -800,10 +1070,10 @@
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-10 border-b pb-6 gap-4">
                     <div>
                       <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter italic leading-none">{activeBidang}</h3>
-                      <div className="inline-block bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase shadow-lg shadow-indigo-100 mt-3 md:mt-2">JKE: {jke} h/Thn</div>
+                      <div className={`inline-block text-white px-4 py-2 rounded-xl text-[10px] uppercase shadow-lg mt-3 md:mt-2 ${t.bg}`}>JKE: {jke} h/Thn</div>
                     </div>
                     <div className="relative w-full md:w-64">
-                       <input placeholder="Cari butir kegiatan..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500" value={filterKuesioner} onChange={(e) => setFilterKuesioner(e.target.value)} />
+                       <input placeholder="Cari butir kegiatan..." className={`w-full bg-slate-50 border border-slate-200 rounded-xl px-10 py-3 text-xs outline-none focus:ring-2 transition-all ${t.ring}`} value={filterKuesioner} onChange={(e) => setFilterKuesioner(e.target.value)} />
                        <i className="ph-bold ph-magnifying-glass text-[14px] absolute left-4 top-3.5 text-slate-400"></i>
                        {filterKuesioner && <i className="ph-bold ph-x text-[14px] absolute right-4 top-3.5 text-slate-400 cursor-pointer" onClick={() => setFilterKuesioner("")}></i>}
                     </div>
@@ -812,13 +1082,13 @@
                   <div className="space-y-16 pl-4">
                     {profilesDataMap[jenisUnit][activeBidang]?.filter(task => task.label.toLowerCase().includes(filterKuesioner.toLowerCase()) || task.id.toLowerCase().includes(filterKuesioner.toLowerCase())).map((task) => (
                       <div key={task.id} className="group border-b border-slate-50 pb-12 last:border-0">
-                        <h4 className="text-[11px] text-slate-700 uppercase tracking-widest flex items-center mb-8 group-hover:text-indigo-600 transition-colors">
-                          <span className="text-slate-300 mr-4 text-[9px] font-mono bg-slate-50 px-2 py-0.5 rounded border">ID:{task.id}</span> {task.label}
+                        <h4 className={`text-[11px] text-slate-700 uppercase tracking-widest flex items-center mb-8 transition-colors ${t.text}`}>
+                          <span className="text-slate-400 mr-4 text-[9px] font-mono bg-slate-50 px-2 py-0.5 rounded border">ID:{task.id}</span> {task.label}
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                          <div className="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100 shadow-inner relative h-fit group-hover:bg-indigo-100/50 transition-colors">
-                            <i className="ph-fill ph-lightbulb text-[16px] text-indigo-500 absolute -top-2 -left-2 bg-white p-0.5 rounded-full border border-indigo-100 shadow-sm"></i>
-                            <p className="text-[10px] text-indigo-400 uppercase tracking-widest mb-2 italic tracking-wider leading-none">Aktivitas Analitis & Kebijakan:</p>
+                          <div className={`${t.light} p-6 rounded-3xl border ${t.border} shadow-inner relative h-fit transition-colors`}>
+                            <i className={`ph-fill ph-lightbulb text-[16px] absolute -top-2 -left-2 bg-white p-0.5 rounded-full border shadow-sm ${t.text} ${t.border}`}></i>
+                            <p className={`text-[10px] uppercase tracking-widest mb-2 italic tracking-wider leading-none ${t.text}`}>Aktivitas Analitis & Kebijakan:</p>
                             <p className="text-xs text-slate-600 leading-relaxed italic font-medium">{task.desc}</p>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 shrink-0">
@@ -826,13 +1096,13 @@
                               <label className="text-[9px] text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <i className="ph-fill ph-clipboard-text text-[12px]"></i> Volume ({task.uVol})
                               </label>
-                              <input type="number" value={answers[`${task.id}_vol`] || ''} onChange={(e) => handleValChange(task.id, 'vol', e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 focus:ring-indigo-500 shadow-inner h-14" placeholder={task.dVol.toString()} />
+                              <input type="number" value={answers[`${task.id}_vol`] || ''} onChange={(e) => handleValChange(task.id, 'vol', e.target.value)} className={`w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 shadow-inner h-14 transition-all ${t.ring}`} placeholder={task.dVol.toString()} />
                             </div>
                             <div className="space-y-3">
                               <label className="text-[9px] text-slate-400 uppercase tracking-widest flex items-center gap-2">
                                 <i className="ph-fill ph-clock text-[12px]"></i> Norma ({task.uTime})
                               </label>
-                              <input type="number" step="0.1" value={answers[`${task.id}_time`] || ''} onChange={(e) => handleValChange(task.id, 'time', e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 focus:ring-indigo-500 shadow-inner h-14" placeholder={task.dTime.toString()} />
+                              <input type="number" step="0.1" value={answers[`${task.id}_time`] || ''} onChange={(e) => handleValChange(task.id, 'time', e.target.value)} className={`w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 text-right text-2xl focus:ring-2 shadow-inner h-14 transition-all ${t.ring}`} placeholder={task.dTime.toString()} />
                             </div>
                           </div>
                         </div>
@@ -845,14 +1115,14 @@
               {activeTab === "PROYEKSI" && (
                 <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-xl overflow-hidden animate-in fade-in">
                   <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter mb-6 md:mb-10 flex items-center gap-3 leading-none">
-                    <i className="ph-fill ph-calendar text-[20px] md:text-[24px] text-indigo-600"></i> Rencana Pemenuhan 5 Tahun
+                    <i className={`ph-fill ph-calendar text-[20px] md:text-[24px] ${t.text}`}></i> Rencana Pemenuhan 5 Tahun
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead>
                         <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase tracking-widest border-b">
                           <th className="px-6 py-5">Jenjang Jabatan</th>
-                          <th className="px-4 py-5 text-center bg-indigo-50 text-indigo-700">ABK (Kebutuhan)</th>
+                          <th className={`px-4 py-5 text-center ${t.light} ${t.text}`}>ABK (Kebutuhan)</th>
                           <th className="px-4 py-5 text-center">Bezetting</th>
                           <th className="px-4 py-5 text-center bg-rose-50 text-rose-700">Gap (+/-)</th>
                           {["2026", "2027", "2028"].map(y => <th key={y} className="px-4 py-5 text-center text-emerald-600">{y}</th>)}
@@ -866,19 +1136,19 @@
                            return (
                             <tr key={j} className="hover:bg-slate-50/80 transition-all">
                               <td className="px-6 py-6 italic leading-none text-slate-700">Analis Keuangan Ahli {j}</td>
-                              <td className="px-4 py-6 text-center text-indigo-600 bg-indigo-50/20 leading-none">{resultsData.formasi[j]}</td>
+                              <td className={`px-4 py-6 text-center leading-none ${t.text} ${t.light}`}>{resultsData.formasi[j]}</td>
                               <td className="px-4 py-6">
                                 <input type="number" value={bez} onChange={(e) => {
                                  const nBez = {...bezetting, [j]: Number(e.target.value)};
                                  setBezetting(nBez);
                                  autoSave({ bezetting: nBez });
-                                }} className="w-16 mx-auto block bg-slate-50 border rounded-lg text-center py-1 focus:ring-2 focus:ring-indigo-500 outline-none h-10 leading-none" />
+                                }} className={`w-16 mx-auto block bg-slate-50 border rounded-lg text-center py-1 focus:ring-2 outline-none h-10 leading-none ${t.ring}`} />
                               </td>
                               <td className={`px-4 py-6 text-center ${gap > 0 ? 'text-rose-500' : 'text-emerald-600'}`}>{gap > 0 ? `Kurang ${gap}` : gap < 0 ? `Lebih ${Math.abs(gap)}` : 'Sesuai'}</td>
-                              {[1,2,3].map(t => (
-                                <td key={t} className="px-4 py-6 bg-emerald-50/10">
-                                  <input type="number" value={fulfillment[`${j}_T${t}`] || ''} onChange={(e) => {
-                                     const nFul = {...fulfillment, [`${j}_T${t}`]: Number(e.target.value)};
+                              {[1,2,3].map(yr => (
+                                <td key={yr} className="px-4 py-6 bg-emerald-50/10">
+                                  <input type="number" value={fulfillment[`${j}_T${yr}`] || ''} onChange={(e) => {
+                                     const nFul = {...fulfillment, [`${j}_T${yr}`]: Number(e.target.value)};
                                      setFulfillment(nFul);
                                      autoSave({ fulfillment: nFul });
                                   }} className="w-14 mx-auto block bg-white border border-emerald-100 rounded-lg text-center py-1 outline-none h-10 leading-none" placeholder="0" />
@@ -897,28 +1167,28 @@
                 <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-sm overflow-hidden min-h-[600px] animate-in fade-in">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-8 border-b pb-6 shrink-0">
                      <h3 className="text-lg md:text-xl text-slate-800 uppercase tracking-tighter italic leading-none">Laporan Analisis Beban Kerja {unitKerja}</h3>
-                     <button onClick={handleExport} className="w-full sm:w-auto justify-center bg-slate-900 text-white px-5 py-3 md:py-2 rounded-xl text-[10px] uppercase flex items-center gap-2 hover:bg-black transition-colors shadow-lg active:scale-95 leading-none md:h-10 shadow-slate-200">
+                     <button onClick={handleExport} className={`w-full sm:w-auto justify-center text-white px-5 py-3 md:py-2 rounded-xl text-[10px] uppercase flex items-center gap-2 shadow-lg active:scale-95 leading-none md:h-10 transition-all ${t.bg} ${t.hover}`}>
                        <i className="ph-bold ph-download text-[14px]"></i> EXPORT DATA CSV
                      </button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-10">
                     {["PERTAMA", "MUDA", "MADYA"].map(j => (
-                      <div key={j} className="p-6 bg-indigo-50 rounded-3xl border border-indigo-100 shadow-inner group hover:bg-indigo-600 transition-all duration-300 text-center">
-                        <p className="text-[10px] text-indigo-400 group-hover:text-indigo-200 uppercase mb-1 leading-none tracking-widest text-center">{j}</p>
-                        <p className="text-3xl text-indigo-700 group-hover:text-white italic leading-none text-center">{resultsData.formasi[j]}</p>
+                      <div key={j} className={`${t.light} p-6 rounded-3xl border ${t.border} shadow-inner group hover:opacity-80 transition-all duration-300 text-center`}>
+                        <p className={`text-[10px] uppercase mb-1 leading-none tracking-widest text-center ${t.text}`}>{j}</p>
+                        <p className={`text-3xl italic leading-none text-center ${t.text}`}>{resultsData.formasi[j]}</p>
                       </div>
                     ))}
                   </div>
                   <table className="w-full text-left text-[10px] border-collapse">
                     <thead className="bg-slate-50 text-slate-400 border-b uppercase">
-                      <tr><th className="px-4 py-3">Rincian Aktivitas Analitis</th><th className="px-2 py-3 text-center">Beban Jam</th><th className="px-2 py-3 text-center text-indigo-600">Kebutuhan JF</th></tr>
+                      <tr><th className="px-4 py-3">Rincian Aktivitas Analitis</th><th className="px-2 py-3 text-center">Beban Jam</th><th className={`px-2 py-3 text-center ${t.text}`}>Kebutuhan JF</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-[9px] text-slate-700">
                       {resultsData.list.map(r => (
                         <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-4 py-3 leading-snug italic">{r.label}</td>
                           <td className="px-2 py-3 text-center leading-none">{Math.round(r.jam).toLocaleString()} h</td>
-                          <td className="px-2 py-3 text-center text-indigo-600 leading-none">{(r.jam/jke).toFixed(3)}</td>
+                          <td className={`px-2 py-3 text-center leading-none ${t.text}`}>{(r.jam/jke).toFixed(3)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -926,6 +1196,145 @@
                       <tr><td className="px-4 py-5 uppercase italic text-xs tracking-widest leading-none">Total Kebutuhan Formasi Unit</td><td></td><td className="px-2 py-5 text-center text-sm italic leading-none">{resultsData.formasi.TOTAL}</td></tr>
                     </tfoot>
                   </table>
+                </div>
+              )}
+
+              {activeTab === "PENGATURAN" && (
+                <div className="bg-white rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-10 border border-slate-200 shadow-sm animate-in fade-in">
+                  <h3 className="text-xl md:text-2xl text-slate-800 uppercase tracking-tighter flex items-center gap-3 mb-6 md:mb-10 leading-none">
+                    <i className={`ph-fill ph-gear text-[20px] md:text-[24px] ${t.text}`}></i> Pengaturan Sistem
+                  </h3>
+
+                  <div className="max-w-2xl bg-slate-50 p-6 md:p-8 rounded-3xl border border-slate-200 shadow-inner">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+                      <div className={`${t.light} ${t.text} w-12 h-12 rounded-2xl flex items-center justify-center shrink-0`}>
+                        <i className="ph-fill ph-key text-[24px]"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-black text-slate-800 leading-tight">Gemini API Key</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-1">Masukkan kunci API Anda untuk mengaktifkan fitur Analisis AI.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <input
+                        type="password"
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        placeholder="AIzaSy..."
+                        className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-4 text-sm font-bold outline-none focus:ring-2 transition-all shadow-sm ${t.ring}`}
+                      />
+                      <div className="flex flex-col sm:flex-row items-center gap-3">
+                        <button
+                          onClick={() => {
+                            localStorage.setItem(`${APP_PREFIX}gemini_api_key`, customApiKey);
+                            setKeySavedMsg("API Key berhasil disimpan di perangkat Anda!");
+                            setTimeout(() => setKeySavedMsg(""), 3000);
+                          }}
+                          className={`w-full sm:w-auto text-white px-6 py-3 rounded-xl text-xs shadow-lg flex items-center justify-center gap-2 transition-all font-black ${t.bg} ${t.hover}`}
+                        >
+                          <i className="ph-bold ph-floppy-disk text-[16px]"></i> SIMPAN API KEY
+                        </button>
+                        {keySavedMsg && (
+                          <span className="text-emerald-600 text-xs font-bold flex items-center gap-1 animate-in fade-in">
+                            <i className="ph-fill ph-check-circle"></i> {keySavedMsg}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-slate-200">
+                      <p className="text-[10px] text-slate-500 leading-relaxed font-bold">
+                        <i className={`ph-fill ph-info text-[12px] mr-1 ${t.text}`}></i>
+                        KEAMANAN: API Key Anda disimpan secara lokal (<span className="italic">Local Storage</span>) di *browser* perangkat Anda dan <strong>tidak dikirim</strong> ke server pusat aplikasi ini.
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-2 font-bold">
+                        Belum punya API Key? Dapatkan secara gratis di <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline text-slate-700">Google AI Studio</a>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* WIDGET LOGO & WARNA (WHITE-LABEL) */}
+                  <div className="max-w-2xl bg-slate-50 p-6 md:p-8 rounded-3xl border border-slate-200 shadow-inner mt-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+                      <div className={`${t.light} ${t.text} w-12 h-12 rounded-2xl flex items-center justify-center shrink-0`}>
+                        <i className="ph-fill ph-palette text-[24px]"></i>
+                      </div>
+                      <div>
+                        <h4 className="text-lg font-black text-slate-800 leading-tight">Kustomisasi Tampilan (White-label)</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-1">Sesuaikan nama aplikasi, logo instansi, dan warna tombol.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="flex flex-col md:flex-row gap-6">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1 mb-2 block">Upload Logo Aplikasi</label>
+                          <div className="flex items-center gap-4">
+                              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm overflow-hidden text-white shrink-0 ${t.bg}`}>
+                                {customLogo ? <img src={customLogo} className="w-full h-full object-contain bg-white" alt="Custom Logo" /> : <i className="ph-fill ph-calculator text-[28px]"></i>}
+                              </div>
+                              <div className="flex-1 flex flex-col gap-2">
+                                <input type="file" accept="image/png, image/jpeg" onChange={handleLogoUpload} className="text-[10px] file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-black file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300 w-full" />
+                                {customLogo && <button onClick={() => setCustomLogo(null)} className="text-[10px] text-rose-500 font-bold text-left hover:underline">Hapus Logo (Reset)</button>}
+                              </div>
+                          </div>
+                        </div>
+
+                        <div className="flex-1">
+                          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1 mb-2 block">Tema Warna Aplikasi</label>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                              {Object.keys(THEME_OPTIONS).map(colorKey => (
+                                <button 
+                                  key={colorKey}
+                                  onClick={() => setAppTheme(colorKey)}
+                                  title={`Tema ${colorKey}`}
+                                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${THEME_OPTIONS[colorKey].bg} ${appTheme === colorKey ? 'ring-4 ring-offset-2 ring-slate-200 scale-110' : 'hover:scale-110 opacity-80 hover:opacity-100'}`}
+                                >
+                                  {appTheme === colorKey && <i className="ph-bold ph-check text-white text-[14px]"></i>}
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1 mb-2 block">Nama Aplikasi</label>
+                        <input
+                          type="text"
+                          value={customAppName}
+                          onChange={(e) => setCustomAppName(e.target.value)}
+                          placeholder="Contoh: Kalkulator JF AKN"
+                          className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:ring-2 transition-all shadow-sm ${t.ring}`}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1 mb-2 block">Nama Instansi / Pemda (Subjudul)</label>
+                        <input
+                          type="text"
+                          value={customPemdaName}
+                          onChange={(e) => setCustomPemdaName(e.target.value)}
+                          placeholder="Contoh: Pemerintah Kota Medan"
+                          className={`w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 text-sm font-bold outline-none focus:ring-2 transition-all shadow-sm ${t.ring}`}
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                        <button
+                          onClick={saveBranding}
+                          className={`w-full sm:w-auto text-white px-6 py-3 rounded-xl text-xs shadow-lg flex items-center justify-center gap-2 transition-all font-black ${t.bg} ${t.hover}`}
+                        >
+                          <i className="ph-bold ph-floppy-disk text-[16px]"></i> SIMPAN PENGATURAN
+                        </button>
+                        {brandingSavedMsg && (
+                          <span className="text-emerald-600 text-xs font-bold flex items-center gap-1 animate-in fade-in">
+                            <i className="ph-fill ph-check-circle"></i> {brandingSavedMsg}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               )}
             </div>
